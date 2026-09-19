@@ -1,7 +1,7 @@
-const CACHE = 'hisab-khata-v2';
+const CACHE = 'hisab-khata-v3';
 const FILES = [
   './', './index.html', './style.css', './manifest.json',
-  './icon-192.png', './icon-512.png',
+  './icon-192.png', './icon-512.png', './icon-maskable-512.png',
   './i18n.js', './settings.js', './backup.js', './state.js', './recurring.js',
   './render.js', './entries.js', './notes-plans.js', './loans.js', './init.js'
 ];
