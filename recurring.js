@@ -47,7 +47,10 @@ function recurringPayDate(tpl, period){
 
 /* T6: মুছে যাওয়া এন্ট্রি কোনো paid history ধরে থাকলে ওই history সরাও (মাসটি আবার pending)।
    ফেরত দেয় সরানো রেকর্ডের তালিকা (আন্ডুতে restoreRecurringHistory-তে দেওয়ার জন্য)। */
-function detachRecurringHistoryForEntries(ids){
+/* T11: save=false দিলে এই ফাংশন নিজে saveRecurring() করে না — কলার (যেমন entries.js)
+   entries+recurring একসাথে অ্যাটমিকভাবে সেভ করতে চাইলে এভাবে কল করে। */
+function detachRecurringHistoryForEntries(ids, save){
+  if(save === undefined) save = true;
   const removed = [];
   recurringTemplates.forEach(tpl=>{
     if(!tpl.history || typeof tpl.history !== 'object') return;
@@ -59,17 +62,18 @@ function detachRecurringHistoryForEntries(ids){
       }
     });
   });
-  if(removed.length){ saveRecurring(); checkRecurringReminder(); renderRecurringTplList(); }
+  if(removed.length && save){ saveRecurring(); checkRecurringReminder(); renderRecurringTplList(); }
   return removed;
 }
-function restoreRecurringHistory(removed){
+function restoreRecurringHistory(removed, save){
+  if(save === undefined) save = true;
   let changed = false;
   removed.forEach(r=>{
     if(recurringTemplates.indexOf(r.tpl) === -1) return;   // এর মধ্যে টেমপ্লেট মুছে ফেললে আর ফেরানোর কিছু নেই
     if(r.tpl.history[r.period]) return;                    // এর মধ্যে ওই মাস আবার পে/স্কিপ হলে ওভাররাইট করো না
     r.tpl.history[r.period] = r.rec; changed = true;
   });
-  if(changed){ saveRecurring(); checkRecurringReminder(); renderRecurringTplList(); }
+  if(changed && save){ saveRecurring(); checkRecurringReminder(); renderRecurringTplList(); }
 }
 
 function checkRecurringReminder(){
@@ -99,7 +103,7 @@ function renderRecurringPendingModal(){
   const pending = getAllPendingRecurring();
   if(pending.length === 0){ closeRecurringPendingModal(); return; }
   const accs = getActiveAccountsList().filter(a=> a.id !== 'savings');
-  const accOpts = accs.map(a => '<option value="'+escapeHtml(a.id)+'">'+escapeHtml((a.icon||'')+' '+(a.i18n ? L(a.name) : a.name))+'</option>').join('');
+  const accOpts = accs.map(a => '<option value="'+escapeHtml(a.id)+'">'+escapeHtml(accOptionIconText(a.icon)+(a.i18n ? L(a.name) : a.name))+'</option>').join('');
   const skipLinkKey = { expense:'recurringSkipLinkExpense', income:'recurringSkipLinkIncome' };
   wrap.innerHTML = pending.map(({tpl, period})=>{
     return '<div class="recurring-item" data-tpl="'+Number(tpl.id)+'" data-period="'+escapeHtml(period)+'">'+

@@ -215,7 +215,9 @@ function isValidImportRecurring(r){
   if(r.type !== 'income' && r.type !== 'expense' && r.type !== 'transfer') return false;
   if(r.interval !== 'monthly' && r.interval !== 'yearly') return false;
   if(typeof r.createdPeriod !== 'string' || !YM_PERIOD_RE.test(r.createdPeriod)) return false;
-  if(!r.history || typeof r.history !== 'object' || Array.isArray(r.history)) return false;
+  // T11: history ঐচ্ছিক — পুরনো ব্যাকআপে (history-চালু হওয়ার আগে তৈরি) এই ফিল্ড না-ও থাকতে পারে;
+  // না থাকলেও বাতিল না করে গ্রহণ করা হয়, applyImportedBackup-এর মাইগ্রেশন ধাপ পরে খালি {} বসায়
+  if(r.history !== undefined && (typeof r.history !== 'object' || r.history === null || Array.isArray(r.history))) return false;
   return true;
 }
 
@@ -247,7 +249,7 @@ function normalizeAccount(a){
   if(a.archived === true && !isSystem) out.archived = true;
   return out;
 }
-function migrateAccountsArray(rawAccounts, entriesList, loansList, duesList, recurringList){
+function migrateAccountsArray(rawAccounts, entriesList, loansList, duesList, plansList, recurringList){
   let customAccounts = [];
   if(Array.isArray(rawAccounts)){
     customAccounts = rawAccounts.filter(isValidImportAccount).map(normalizeAccount)
@@ -261,6 +263,8 @@ function migrateAccountsArray(rawAccounts, entriesList, loansList, duesList, rec
   (entriesList||[]).forEach(e=>{ if(e && e.account) referenced.add(e.account); });
   (loansList||[]).forEach(l=>{ if(l && l.account) referenced.add(l.account); });
   (duesList||[]).forEach(d=>{ if(d && d.account) referenced.add(d.account); });
+  // T11: প্ল্যানের account রেফারেন্সও ধরা দরকার (buy-plan/renderPlan এটা দিয়ে অ্যাকাউন্ট দেখায়)
+  (plansList||[]).forEach(p=>{ if(p && p.account) referenced.add(p.account); });
   (recurringList||[]).forEach(r=>{ if(r && r.account) referenced.add(r.account); });
   referenced.forEach(id => { if(!existingIds.has(id)){ existingIds.add(id); accounts.push({ id:id, name:id, icon:'💰', color:'var(--ledger-green)', isSystem:false, i18n:false }); } });
 
@@ -297,13 +301,34 @@ function runImportWithSafetyCopy(parsed){
 }
 
 function applyImportedBackup(parsed){
+  // T11: অ্যাটমিক ইম্পোর্ট — লেখার আগে সব কটা কী-র বর্তমান কাঁচা মান ব্যাকআপ রাখা হয়;
+  // মাঝপথে কোনো একটা কী লেখা ফেল করলে (কোটা ফুল ইত্যাদি) সব কটাই আগের মানে ফিরিয়ে
+  // দেওয়া হয় এবং মেমরি-স্টেট আবার সেই (পুরনো) localStorage থেকে লোড করা হয়,
+  // যাতে কখনো "কিছু নতুন + কিছু পুরনো" মিশ্র অবস্থা তৈরি না হয়।
+  const ATOMIC_KEYS = ['hisab_entries','hisab_notes','hisab_plans','hisab_loans','hisab_dues','hisab_settings','hisab_recurring','hisab_lang'];
+  let prevRaw = null;
+  try{
+    prevRaw = {};
+    ATOMIC_KEYS.forEach(k=>{ try{ prevRaw[k] = localStorage.getItem(k); }catch(e){ prevRaw[k] = null; } });
+  }catch(e){ prevRaw = null; }
+  function rollbackImport(){
+    if(!prevRaw) return;
+    ATOMIC_KEYS.forEach(k=>{
+      try{
+        const v = prevRaw[k];
+        if(v === null || v === undefined) localStorage.removeItem(k);
+        else localStorage.setItem(k, v);
+      }catch(e){}
+    });
+    try{ loadData(); }catch(e){}
+  }
   try{
     const analysis = analyzeImport(parsed);
     const { entriesRes, notesRes, plansRes, loansRes, duesRes, recurringRes } = analysis;
     entries = entriesRes.list; notes = notesRes.list; plans = plansRes.list;
     loans = loansRes.list; dues = duesRes.list; recurringTemplates = recurringRes.list;
 
-    const defaultSettings = { savingsTarget:0, needPct:50, wantPct:30, advancedMode:false, pctHistory:{}, darkMode:'system' };
+    const defaultSettings = { savingsTarget:0, needPct:50, wantPct:30, advancedMode:false, pctHistory:{}, darkMode:'light' };
     const rawSettings = (parsed.settings && typeof parsed.settings === 'object') ? parsed.settings : {};
     settings = Object.assign({}, defaultSettings, rawSettings);
     if(!isFiniteNum(settings.savingsTarget)) settings.savingsTarget = defaultSettings.savingsTarget;
@@ -311,9 +336,9 @@ function applyImportedBackup(parsed){
     if(!isFiniteNum(settings.wantPct)) settings.wantPct = defaultSettings.wantPct;
     if(typeof settings.advancedMode !== 'boolean') settings.advancedMode = defaultSettings.advancedMode;
     if(!settings.pctHistory || typeof settings.pctHistory !== 'object') settings.pctHistory = {};
-    if(!['system','light','dark','black'].includes(settings.darkMode)) settings.darkMode = 'system';
+    if(!['system','light','dark','black'].includes(settings.darkMode)) settings.darkMode = 'light';
 
-    settings.accounts = migrateAccountsArray(rawSettings.accounts, entries, loans, dues, recurringTemplates);
+    settings.accounts = migrateAccountsArray(rawSettings.accounts, entries, loans, dues, plans, recurringTemplates);
 
     // migration: recurring no account, no transfer
     recurringTemplates.forEach(t=>{
@@ -322,17 +347,26 @@ function applyImportedBackup(parsed){
       if(!t.history) t.history = {};
     });
 
-    // ইউজার ব্যাকআপ থেকে ফেরানো বেছেছে — নষ্ট-কী সেভ-ব্লক তোলা হলো (নষ্ট কাঁচা কপি আলাদা কী-তে থেকে যায়)
-    clearCorruptBlocks();
     const saveOk = [saveEntries(), saveNotes(), savePlans(), saveLoans(), saveDues(), saveSettings(), saveRecurring()].every(Boolean);
-    if(parsed.lang === 'bn' || parsed.lang === 'en'){ if(!safeSet('hisab_lang', parsed.lang)) return toast(L('backupImportFailedToast')); }
-    if(!saveOk){ toast(L('backupImportFailedToast')); return; }
+    let langOk = true;
+    if(parsed.lang === 'bn' || parsed.lang === 'en'){ langOk = safeSet('hisab_lang', parsed.lang); }
+    if(!saveOk || !langOk){
+      rollbackImport();
+      toast(L('backupImportFailedToast'));
+      return;
+    }
+
+    // সব কী সফলভাবে লেখা হয়েছে — এখন নষ্ট-কী সেভ-ব্লক তোলা যায় (নষ্ট কাঁচা কপি আলাদা কী-তে থেকে যায়)
+    clearCorruptBlocks();
 
     const totalSkipped = analysis.totalSkipped;
     if(totalSkipped > 0){ toast(tfmt('backupImportedWithSkippedToast', { n: numFmt(totalSkipped) }), 4200); }
     else { toast(L('backupImportedToast')); }
     setTimeout(()=>{ location.reload(); }, totalSkipped > 0 ? 2200 : 600);
-  }catch(err){ toast(L('backupImportFailedToast')); }
+  }catch(err){
+    rollbackImport();
+    toast(L('backupImportFailedToast'));
+  }
 }
 
 document.getElementById('importDataBtn').addEventListener('click', ()=>{ document.getElementById('importDataInput').click(); });

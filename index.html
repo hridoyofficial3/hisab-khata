@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta name="theme-color" content="#1F5C4F">
+<meta name="theme-color" content="#0D9488">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -33,25 +33,51 @@
   height: 19px !important;
   stroke-width: 2 !important;
 }
-#dashAccGrid .acc-card:nth-child(1) .acc-ic{ background: rgba(31,92,79,0.20) !important; }
-#dashAccGrid .acc-card:nth-child(2) .acc-ic{ background: rgba(47,92,140,0.20) !important; }
-#dashAccGrid .acc-card:nth-child(3) .acc-ic{ background: rgba(107,76,140,0.20) !important; }
-#dashAccGrid .acc-card:nth-child(4) .acc-ic{ background: rgba(140,47,47,0.20) !important; }
-html[data-theme="dark"] #dashAccGrid .acc-card:nth-child(1) .acc-ic,
-html[data-theme="black"] #dashAccGrid .acc-card:nth-child(1) .acc-ic{ background: rgba(92,196,162,0.25) !important; }
-html[data-theme="dark"] #dashAccGrid .acc-card:nth-child(2) .acc-ic,
-html[data-theme="black"] #dashAccGrid .acc-card:nth-child(2) .acc-ic{ background: rgba(110,156,219,0.25) !important; }
-html[data-theme="dark"] #dashAccGrid .acc-card:nth-child(3) .acc-ic,
-html[data-theme="black"] #dashAccGrid .acc-card:nth-child(3) .acc-ic{ background: rgba(168,150,222,0.25) !important; }
-html[data-theme="dark"] #dashAccGrid .acc-card:nth-child(4) .acc-ic,
-html[data-theme="black"] #dashAccGrid .acc-card:nth-child(4) .acc-ic{ background: rgba(232,144,138,0.25) !important; }
+/* T11 #১৩: এখানে আগে `.acc-card:nth-child(1..4) .acc-ic`-এর পজিশন-ভিত্তিক রঙ ছিল — অ্যাকাউন্ট আর্কাইভ/যোগ হলে পজিশন বদলে ভুল রঙ বসত। এখন ড্যাশবোর্ড কার্ডের আইকন-রঙ render.js-এর `renderDashAccCards`-এ অ্যাকাউন্টের id/রঙ অনুযায়ী inline বসে (পজিশন নির্ভর নয়)। */
   </style>
 </head>
 <body>
+
+<!-- ================= APP LOCK SCREEN ================= -->
+<div id="appLockScreen">
+  <div class="lock-box">
+    <div class="lock-icon" aria-hidden="true">
+      <svg viewBox="0 0 48 48" width="50" height="50" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+        <path d="M6 32V22a18 18 0 0 1 36 0v3"/>
+        <path d="M12 39V22a12 12 0 0 1 24 0v8"/>
+        <path d="M18 43V22a6 6 0 0 1 12 0v12"/>
+        <path d="M24 22v17"/>
+      </svg>
+    </div>
+    <h2 data-i18n="lockScreenTitle">হিসাব খাতা লক করা আছে</h2>
+    <div class="settings-desc" data-i18n="lockScreenDesc">চালিয়ে যেতে পাসওয়ার্ড দাও।</div>
+    <input type="password" id="lockScreenPwInput" autocomplete="off" data-i18n-ph="lockScreenPwPh" placeholder="পাসওয়ার্ড" style="margin-top:16px;">
+    <div class="settings-desc warn" id="lockScreenError" style="display:none; margin-top:8px;"></div>
+    <button class="btn gold" id="lockScreenUnlockBtn" type="button" style="margin-top:14px; width:100%;" data-i18n="lockScreenUnlockBtn">আনলক করো</button>
+    <button class="btn outline" id="lockScreenFingerprintBtn" type="button" style="margin-top:10px; width:100%; display:none;" data-i18n="lockScreenFingerprintBtn">👆 ফিঙ্গারপ্রিন্ট দিয়ে আনলক করো</button>
+    <a href="javascript:void(0)" id="lockScreenForgotLink" class="lock-forgot-link" data-i18n="lockScreenForgotLink">পাসওয়ার্ড ভুলে গেছি</a>
+  </div>
+</div>
+<script>
+/* Critical-path: show the lock overlay immediately, before the rest of the page
+   paints, so there's no flash of the app's data. The real unlock logic loads later
+   in privacy-lock.js. */
+(function(){
+  try{
+    if(localStorage.getItem('hisab_lock_enabled') === '1'){
+      document.getElementById('appLockScreen').classList.add('show');
+      document.body.classList.add('lock-active');
+    }
+  }catch(e){}
+})();
+</script>
+
 <header>
   <div class="header-inner">
     <div class="htitle">
-      <div class="app-icon">📒</div>
+      <div class="app-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>
+      </div>
       <div class="htitle-text">
         <h1 data-i18n="appTitle">হিসাব খাতা</h1>
         <div class="date" id="todayDate"></div>
@@ -200,6 +226,34 @@ html[data-theme="black"] #dashAccGrid .acc-card:nth-child(4) .acc-ic{ background
         </div>
       </div>
 
+      <!-- প্রাইভেসি ও সেফটি -->
+      <div class="settings-section acc-privacy">
+        <h4 class="sec collapsible" onclick="toggleCollapse(this,'settingsPrivacyBody')" role="button" tabindex="0" aria-expanded="false"><span class="sec-title"><span class="sec-icon icon-privacy">🔒</span><span data-i18n="privacyLabel">প্রাইভেসি ও সেফটি</span></span> <span class="chev">▾</span></h4>
+        <div class="collapse-body" id="settingsPrivacyBody">
+          <div class="settings-desc" data-i18n="privacyDesc" style="margin-top:4px;">অ্যাপ খোলার সময় পাসওয়ার্ড চাইবে — অন্য কেউ ফোন হাতে নিলে হিসাব দেখতে পারবে না।</div>
+
+          <div id="lockOffState">
+            <button class="btn gold" id="enableLockBtn" type="button" style="margin-top:10px; width:100%;" data-i18n="enableLockBtn">অ্যাপ লক চালু করো</button>
+          </div>
+
+          <div id="lockOnState" style="display:none;">
+            <div class="settings-desc ok" id="lockOnStatus" style="margin-top:8px; font-weight:600;" data-i18n="lockOnStatus">✅ অ্যাপ লক চালু আছে</div>
+
+            <div class="switch-row" id="fingerprintRow" style="display:none; margin-top:12px;">
+              <span class="settings-desc" style="margin:0;" data-i18n="fingerprintLabel">ফিঙ্গারপ্রিন্ট / ফেস দিয়ে আনলক</span>
+              <label class="switch">
+                <input type="checkbox" id="fingerprintToggle">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <button class="btn outline" id="changeLockPwBtn" type="button" style="margin-top:10px; width:100%;" data-i18n="changeLockPwBtn">পাসওয়ার্ড পরিবর্তন করো</button>
+            <button class="btn outline" id="changeSecurityQBtn" type="button" style="margin-top:10px; width:100%;" data-i18n="changeSecurityQBtn">সিকিউরিটি প্রশ্ন পরিবর্তন করো</button>
+            <button class="btn danger" id="disableLockBtn" type="button" style="margin-top:14px; width:100%;" data-i18n="disableLockBtn">অ্যাপ লক বন্ধ করো</button>
+          </div>
+        </div>
+      </div>
+
       <!-- ব্যাকআপ / রিস্টোর -->
       <div class="settings-section acc-backup">
         <h4 class="sec collapsible" onclick="toggleCollapse(this,'settingsBackupBody')" role="button" tabindex="0" aria-expanded="false"><span class="sec-title"><span class="sec-icon icon-backup"><svg class="acc-svg cloud-check-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 0 1-.6-7.96A5.5 5.5 0 0 1 17.4 8.5 4.5 4.5 0 0 1 17 18H7Z"></path><path d="m9 13 2 2 4-4"></path></svg></span><span data-i18n="backupLabel">ব্যাকআপ / রিস্টোর</span></span> <span class="chev">▾</span></h4>
@@ -326,6 +380,58 @@ html[data-theme="black"] #dashAccGrid .acc-card:nth-child(4) .acc-ic{ background
     </div>
   </div>
 
+  <!-- ================= APP LOCK: password create/change/verify/reset modal ================= -->
+  <div class="modal-overlay" id="lockPasswordModal">
+    <div class="modal-card">
+      <div class="modal-header"><h3 id="lockPasswordTitle" data-i18n="lockSetupTitle">অ্যাপ লক পাসওয়ার্ড তৈরি করো</h3><button class="modal-close" id="lockPasswordCloseBtn">×</button></div>
+      <div class="settings-desc" id="lockPasswordDesc"></div>
+      <input type="password" id="lockCurrentPwInput" autocomplete="off" data-i18n-ph="lockCurrentPwPh" placeholder="বর্তমান পাসওয়ার্ড" style="margin-top:10px; display:none;">
+      <input type="password" id="lockNewPwInput" autocomplete="off" data-i18n-ph="lockNewPwPh" placeholder="নতুন পাসওয়ার্ড (কমপক্ষে ৪ অক্ষর)" style="margin-top:8px;">
+      <input type="password" id="lockConfirmPwInput" autocomplete="off" data-i18n-ph="lockConfirmPwPh" placeholder="নতুন পাসওয়ার্ড আবার লেখো" style="margin-top:8px;">
+      <div class="settings-desc warn" id="lockPasswordError" style="display:none; margin-top:6px;"></div>
+      <div class="modal-actions">
+        <button class="btn gold" id="lockPasswordSubmitBtn" style="width:100%;" data-i18n="lockSetupSaveBtn">সেভ করো ও চালু করো</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= APP LOCK: security question modal ================= -->
+  <div class="modal-overlay" id="securityQModal">
+    <div class="modal-card">
+      <div class="modal-header"><h3 data-i18n="securityQTitle">সিকিউরিটি প্রশ্ন সেট করো</h3><button class="modal-close" id="securityQCloseBtn">×</button></div>
+      <div class="settings-desc" data-i18n="securityQDesc">পাসওয়ার্ড ভুলে গেলে এই প্রশ্নের উত্তর দিয়ে নতুন পাসওয়ার্ড সেট করা যাবে।</div>
+      <label style="margin-top:10px; display:block;" data-i18n="securityQSelectLabel">একটা প্রশ্ন বাছো</label>
+      <select id="securityQSelect" style="margin-top:4px;">
+        <option value="securityQ1" data-i18n="securityQ1">তোমার প্রিয় শিক্ষকের নাম কী?</option>
+        <option value="securityQ2" data-i18n="securityQ2">তোমার শৈশবের প্রিয় বন্ধুর নাম কী?</option>
+        <option value="securityQ3" data-i18n="securityQ3">তোমার প্রথম পোষা প্রাণীর নাম কী?</option>
+        <option value="securityQ4" data-i18n="securityQ4">তোমার জন্মস্থান কোন শহর/গ্রাম?</option>
+        <option value="custom" data-i18n="securityQCustomOpt">নিজের প্রশ্ন লিখো</option>
+      </select>
+      <input type="text" id="securityQCustomInput" autocomplete="off" data-i18n-ph="securityQCustomPh" placeholder="তোমার নিজের প্রশ্ন লেখো" style="margin-top:8px; display:none;">
+      <input type="text" id="securityAnswerInput" autocomplete="off" data-i18n-ph="securityAnswerPh" placeholder="উত্তর লেখো" style="margin-top:8px;">
+      <div class="settings-desc warn" id="securityQError" style="display:none; margin-top:6px;"></div>
+      <div class="modal-actions">
+        <button class="btn gold" id="securityQSaveBtn" style="width:100%;" data-i18n="securityQSaveBtn">সেভ করো</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= APP LOCK: forgot password modal ================= -->
+  <div class="modal-overlay" id="forgotPwModal">
+    <div class="modal-card">
+      <div class="modal-header"><h3 data-i18n="forgotPwTitle">পাসওয়ার্ড রিসেট করো</h3><button class="modal-close" id="forgotPwCloseBtn">×</button></div>
+      <div class="settings-desc" data-i18n="forgotPwDesc">তোমার সিকিউরিটি প্রশ্নের উত্তর দাও:</div>
+      <div class="settings-desc" id="forgotPwQuestionText" style="margin-top:6px; font-weight:600;"></div>
+      <input type="text" id="forgotPwAnswerInput" autocomplete="off" data-i18n-ph="forgotPwAnswerPh" placeholder="উত্তর লেখো" style="margin-top:8px;">
+      <div class="settings-desc warn" id="forgotPwError" style="display:none; margin-top:6px;"></div>
+      <div class="modal-actions">
+        <button class="btn outline" id="forgotPwCancelBtn" data-i18n="forgotPwCancelBtn">ফিরে যাও</button>
+        <button class="btn gold" id="forgotPwSubmitBtn" data-i18n="forgotPwSubmitBtn">যাচাই করো</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="settleLoanModal">
     <div class="modal-card">
       <div class="modal-header"><h3 id="settleLoanTitle" data-i18n="settlePartialTitle">কত টাকা পরিশোধ করছো?</h3><button class="modal-close" id="settleLoanCloseBtn">×</button></div>
@@ -407,10 +513,10 @@ html[data-theme="black"] #dashAccGrid .acc-card:nth-child(4) .acc-ic{ background
   <div class="modal-overlay" id="allEntriesModal">
     <div class="modal-card">
       <div class="modal-header"><h3 data-i18n="allEntriesTitle">সব লেনদেন</h3><button class="modal-close" id="allEntriesCloseBtn">×</button></div>
-      <input type="text" id="allEntriesSearchInput" placeholder="নোট দিয়ে খুঁজুন..." style="margin-bottom:8px;">
-      <div class="row2" style="margin-bottom:10px;">
-        <select id="allEntriesFilterAccount"><option value="all" data-i18n="filterAllOpt">সব</option></select>
-        <select id="allEntriesFilterType">
+      <input type="text" id="allEntriesSearchInput" class="search-input" placeholder="নোট দিয়ে খুঁজুন..." style="margin-bottom:8px;">
+      <div class="row2 filter-chip-row" style="margin-bottom:10px;">
+        <select id="allEntriesFilterAccount" class="chip-select"><option value="all" data-i18n="filterAllOpt">সব</option></select>
+        <select id="allEntriesFilterType" class="chip-select">
           <option value="all" data-i18n="filterAllOpt">সব</option>
           <option value="income" data-i18n="typeIncome">আয়</option>
           <option value="expense" data-i18n="typeExpense">ব্যয়</option>
@@ -473,11 +579,11 @@ html[data-theme="black"] #dashAccGrid .acc-card:nth-child(4) .acc-ic{ background
   </div>
 
   <div class="tabs" role="tablist">
-    <div class="tab active" data-tab="daily" data-i18n="tabDaily" role="tab" tabindex="0" aria-selected="true">হিসাব</div>
-    <div class="tab" data-tab="savings" data-i18n="tabSavings" role="tab" tabindex="0" aria-selected="false">সেভিংস</div>
-    <div class="tab" data-tab="loans" data-i18n="tabLoans" role="tab" tabindex="0" aria-selected="false">দেনাপাওনা</div>
-    <div class="tab" data-tab="notes" data-i18n="tabNotes" role="tab" tabindex="0" aria-selected="false">নোট</div>
-    <div class="tab" data-tab="summary" data-i18n="tabSummary" role="tab" tabindex="0" aria-selected="false">মাস শেষে</div>
+    <div class="tab active" data-tab="daily" role="tab" tabindex="0" aria-selected="true"><svg class="tab-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 21V12h6v9"/></svg><span data-i18n="tabDaily">হিসাব</span></div>
+    <div class="tab" data-tab="savings" role="tab" tabindex="0" aria-selected="false"><svg class="tab-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12c0-1 .5-2 1.5-2.8C6.2 6 9 4 13 4c3 0 4.5 1.2 5.3 2.2.3.4.8.6 1.3.6.8 0 1.4.6 1.4 1.4v1.6l-2 .7"/><path d="M4 12v4c0 1.7 1.8 2.6 3.2 3.1.5.2.8.6.8 1.1V21h7v-1.3c0-.5.3-.9.8-1.1.9-.3 1.9-.8 2.6-1.4"/><circle cx="15" cy="9" r=".6" fill="currentColor" stroke="none"/></svg><span data-i18n="tabSavings">সেভিংস</span></div>
+    <div class="tab" data-tab="loans" role="tab" tabindex="0" aria-selected="false"><svg class="tab-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 20v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="3.2"/><path d="M22 20v-2a3.5 3.5 0 0 0-2.5-3.4"/><path d="M15.5 3.7A3.2 3.2 0 0 1 18 7a3.2 3.2 0 0 1-2.5 3.1"/></svg><span data-i18n="tabLoans">দেনাপাওনা</span></div>
+    <div class="tab" data-tab="notes" role="tab" tabindex="0" aria-selected="false"><svg class="tab-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6l4 4v11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M9 12h6M9 16h4"/></svg><span data-i18n="tabNotes">নোট</span></div>
+    <div class="tab" data-tab="summary" role="tab" tabindex="0" aria-selected="false"><svg class="tab-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V10M11 21V4M18 21v-7"/></svg><span data-i18n="tabSummary">মাস শেষে</span></div>
   </div>
 
   <!-- সব প্যানেল আগের মতোই থাকবে - শুধু panel-daily-এর উপরে acc-grid structure পরিবর্তন হবে না, JS দিয়ে render হবে -->
@@ -543,10 +649,10 @@ html[data-theme="black"] #dashAccGrid .acc-card:nth-child(4) .acc-ic{ background
     <div class="card">
       <h2 class="sec collapsible" onclick="toggleCollapse(this,'recentEntriesBody')" role="button" tabindex="0" aria-expanded="false"><span data-i18n="recentEntries">সাম্প্রতিক লেনদেন</span> <span class="chev">▾</span></h2>
       <div id="recentEntriesBody" class="collapse-body">
-        <input type="text" id="entrySearchInput" placeholder="নোট দিয়ে খুঁজুন..." oninput="renderEntryList()" style="margin-bottom:8px;">
-        <div class="row2" style="margin-bottom:10px;">
-          <select id="entryFilterAccount" onchange="renderEntryList()"><option value="all" data-i18n="filterAllOpt">সব</option></select>
-          <select id="entryFilterType" onchange="renderEntryList()">
+        <input type="text" id="entrySearchInput" class="search-input" placeholder="নোট দিয়ে খুঁজুন..." oninput="renderEntryList()" style="margin-bottom:8px;">
+        <div class="row2 filter-chip-row" style="margin-bottom:10px;">
+          <select id="entryFilterAccount" class="chip-select" onchange="renderEntryList()"><option value="all" data-i18n="filterAllOpt">সব</option></select>
+          <select id="entryFilterType" class="chip-select" onchange="renderEntryList()">
             <option value="all" data-i18n="filterAllOpt">সব</option>
             <option value="income" data-i18n="typeIncome">আয়</option>
             <option value="expense" data-i18n="typeExpense">ব্যয়</option>
@@ -556,6 +662,10 @@ html[data-theme="black"] #dashAccGrid .acc-card:nth-child(4) .acc-ic{ background
         <button type="button" class="btn outline" id="viewAllEntriesBtn" style="width:100%; margin-top:10px;" data-i18n="viewAllEntriesBtn">সব দেখো</button>
       </div>
     </div>
+
+    <button type="button" class="fab" id="fabAddEntry" aria-label="নতুন লেনদেন যোগ করো">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
   </div>
 
   <div class="panel" id="panel-savings">
@@ -760,6 +870,22 @@ html[data-theme="black"] #dashAccGrid .acc-card:nth-child(4) .acc-ic{ background
       <div id="monthlyChartWrap"></div>
     </div>
 
+    <div class="card">
+      <h2 class="sec" data-i18n="pieChartTitle">খাত অনুযায়ী বিশ্লেষণ</h2>
+      <div class="pie-grid">
+        <div class="pie-block">
+          <div class="pie-block-title"><span class="pie-dot" style="background:var(--ledger-green);"></span><span data-i18n="typeIncome">আয়</span></div>
+          <div id="incomePieWrap" class="pie-wrap"></div>
+          <div id="incomePieLegend" class="pie-legend"></div>
+        </div>
+        <div class="pie-block">
+          <div class="pie-block-title"><span class="pie-dot" style="background:var(--ledger-red);"></span><span data-i18n="typeExpense">ব্যয়</span></div>
+          <div id="expensePieWrap" class="pie-wrap"></div>
+          <div id="expensePieLegend" class="pie-legend"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="acc-grid" style="grid-template-columns:1fr 1fr;">
       <div class="acc-card savings clickable" id="balanceCard" onclick="openBalanceBreakdown()" role="button" tabindex="0"><div class="lbl" data-i18n="balance">ব্যালেন্স</div><div class="val" id="sumBalance">৳০</div></div>
       <div class="acc-card savings"><div class="lbl" data-i18n="summarySavingsLabel">মোট সেভিংস (বর্তমান)</div><div class="val" id="sumSavings">৳০</div></div>
@@ -782,7 +908,7 @@ html[data-theme="black"] #dashAccGrid .acc-card:nth-child(4) .acc-ic{ background
       <div class="budget-block"><div class="bt"><span id="needSpentLabel">প্রয়োজনীয় ব্যয়</span><span id="needAmt">৳০</span></div><div class="progress-track"><div class="progress-fill need" id="needFill" style="width:0%"></div></div></div>
       <div class="budget-block"><div class="bt"><span id="wantSpentLabel">ঐচ্ছিক ব্যয়</span><span id="wantAmt">৳০</span></div><div class="progress-track"><div class="progress-fill want" id="wantFill" style="width:0%"></div></div></div>
     </div>
-    <div class="card"><h2 class="sec" data-i18n="accBreakdown">হিসাব অনুযায়ী (এই মাসে)</h2><div id="accMonthBreakdown"></div></div>
+    <div class="card"><h2 class="sec" data-i18n="accBreakdown">হিসাব অনুযায়ী (এই মাসে)</h2><div class="settings-desc" data-i18n="accBreakdownNote" style="margin:-4px 0 8px;">এখানে ধার আদায়/পরিশোধের টাকাও ধরা আছে, তাই উপরের আয়/ব্যয়ের যোগফলের সাথে নাও মিলতে পারে</div><div id="accMonthBreakdown"></div></div>
     <div class="card"><h2 class="sec" data-i18n="catBreakdownTitle">খাত অনুযায়ী ব্যয়</h2><div id="catBreakdown"></div></div>
     <div class="card"><h2 class="sec" data-i18n="debtSettleTitle">দেনা-পাওনা: আদায় ও পরিশোধ</h2><div id="debtSettleTotals" style="margin-bottom:8px;"></div><div id="debtSettleBreakdown"></div></div>
     <div class="card">
@@ -801,6 +927,7 @@ html[data-theme="black"] #dashAccGrid .acc-card:nth-child(4) .acc-ic{ background
 
 <script src="i18n.js"></script>
 <script src="settings.js"></script>
+<script src="privacy-lock.js"></script>
 <script src="backup.js"></script>
 <script src="state.js"></script>
 <script src="recurring.js"></script>

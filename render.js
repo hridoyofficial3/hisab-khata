@@ -96,7 +96,7 @@ function simulateBalances(changeFn){
 function simAccountList(negatives){
   return negatives.map(n=>{
     const meta = getAccountMeta(n.account);
-    const name = meta ? accNameText(meta) : L(accLabelMap[n.account] || 'accCash');
+    const name = meta ? accNameText(meta) : L(accLabelMap[n.account] || 'accUnknown');
     return name + ' (' + moneyFmt(n.after) + ')';
   }).join(', ');
 }
@@ -311,7 +311,13 @@ function renderAccountOptions(){
   const bps = document.getElementById('buyPlanSavingsDest');
   if(bps){ const cur = bps.value; bps.innerHTML = nonSav.map(a=> optHtml(a, cur)).join(''); }
   const ed = document.getElementById('editAccount');
-  if(ed){ const cur = ed.value; ed.innerHTML = accs.filter(a=> !a.archived || a.id === cur).map(a=> optHtml(a, cur)).join(''); }
+  if(ed){
+    const cur = ed.value;
+    const edAccs = accs.filter(a=> !a.archived || a.id === cur);
+    // T11 #১১: cur তালিকার কোনো অ্যাকাউন্টের সাথে না মিললে (নষ্ট/ইম্পোর্ট করা ডেটায় অচেনা অ্যাকাউন্ট) নিঃশব্দে প্রথমটা না বেছে placeholder দেখাই
+    const edHasCur = edAccs.some(a=> a.id === cur);
+    ed.innerHTML = (edHasCur ? '' : ph) + edAccs.map(a=> optHtml(a, cur)).join('');
+  }
 
   ['entryFilterAccount','allEntriesFilterAccount'].forEach(id=>{
     const el = document.getElementById(id);
@@ -863,6 +869,39 @@ function renderPeriodChart(anchorDate){
     '<line x1="0" y1="'+baselineY+'" x2="'+VW+'" y2="'+baselineY+'" stroke="var(--line)" stroke-width="2"></line>' +
     bars + labels + '</svg>';
 }
+const PIE_PALETTE = ['var(--ledger-green)','var(--blue)','var(--purple)','var(--gold)','var(--ledger-red)','#0891B2','#DB2777','#65A30D'];
+function renderCategoryPie(wrapId, legendId, catsObj, emptyMsg){
+  const wrap = document.getElementById(wrapId);
+  const legend = document.getElementById(legendId);
+  if(!wrap || !legend) return;
+  const keys = Object.keys(catsObj).sort((a,b)=>catsObj[b]-catsObj[a]).slice(0,8);
+  const total = round2(keys.reduce((s,k)=>s+catsObj[k],0));
+  if(keys.length===0 || total<=0){
+    wrap.innerHTML = '';
+    legend.innerHTML = '<div class="empty">'+escapeHtml(emptyMsg)+'</div>';
+    return;
+  }
+  const r = 40, cx = 50, cy = 50, sw = 16;
+  const circumference = 2 * Math.PI * r;
+  let offsetAcc = 0, circles = '';
+  const legendRows = [];
+  keys.forEach((k, i)=>{
+    const val = catsObj[k];
+    const frac = val / total;
+    const color = PIE_PALETTE[i % PIE_PALETTE.length];
+    const dash = Math.max(0, frac * circumference);
+    circles += '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="'+sw+'" ' +
+      'stroke-dasharray="'+dash.toFixed(2)+' '+(circumference-dash).toFixed(2)+'" ' +
+      'stroke-dashoffset="'+(-offsetAcc).toFixed(2)+'"></circle>';
+    offsetAcc += dash;
+    const pct = Math.round(frac*100);
+    legendRows.push('<div class="pie-legend-item"><span class="sw" style="background:'+color+';"></span><span class="nm">'+escapeHtml(k)+'</span><span class="pc">'+pct+'%</span></div>');
+  });
+  wrap.innerHTML = '<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' +
+    '<g transform="rotate(-90 '+cx+' '+cy+')">' + circles + '</g>' +
+    '</svg>';
+  legend.innerHTML = legendRows.join('');
+}
 function renderSummary(){
   const y = viewMonth.getFullYear(), m = viewMonth.getMonth();
   document.getElementById('monthLabel').textContent = monthName(m) + ' ' + numFmt(y);
@@ -949,6 +988,14 @@ function renderSummary(){
     const max = cats[catKeys[0]];
     catDiv.innerHTML = catKeys.map(k=>'<div class="catrow"><span class="k">'+escapeHtml(k)+'</span><span class="bar"><span style="width:'+Math.round((cats[k]/max)*100)+'%"></span></span><span class="v">'+moneyFmt(cats[k])+'</span></div>').join('');
   }
+
+  const incomeCats = Object.create(null);
+  monthOperating.filter(en=>en.type==='income').forEach(en=>{
+    const key = en.note ? en.note.trim() : L('otherCategory');
+    incomeCats[key] = round2((incomeCats[key]||0) + en.amount);
+  });
+  renderCategoryPie('incomePieWrap', 'incomePieLegend', incomeCats, L('noIncome'));
+  renderCategoryPie('expensePieWrap', 'expensePieLegend', cats, L('noExpense'));
 
   const settleEntries = monthNormal.filter(en => en.loanId || en.dueId);
   const periodCollected = round2(settleEntries.filter(en=>en.type==='income').reduce((s,e)=>s+e.amount,0));

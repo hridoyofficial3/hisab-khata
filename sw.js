@@ -1,13 +1,20 @@
-const CACHE = 'hisab-khata-v17';
+const CACHE = 'hisab-khata-v29';
 const FILES = [
   './', './index.html', './style.css', './manifest.json',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png',
-  './i18n.js', './settings.js', './backup.js', './state.js', './recurring.js',
+  './i18n.js', './settings.js', './privacy-lock.js', './backup.js', './state.js', './recurring.js',
   './render.js', './entries.js', './notes-plans.js', './loans.js', './init.js'
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(c => c.addAll(FILES))
+      .then(() => self.skipWaiting())
+      // T11 #১৪: addAll ফেল করলে আগে কিছুই দেখা যেত না। এখন কনসোলে লগ হয়; আবার throw করি যাতে ইনস্টল আগের মতোই ফেল থাকে
+      // (এরর গিলে ফেললে অর্ধেক-ক্যাশ নিয়ে নতুন SW সক্রিয় হয়ে পুরনো ভালো ক্যাশ মুছে দিত)
+      .catch(err => { console.error('SW install failed', err); throw err; })
+  );
 });
 
 self.addEventListener('activate', e => {
@@ -32,7 +39,8 @@ self.addEventListener('fetch', e => {
       })
       .catch(() => {
         if (e.request.mode === 'navigate') return caches.match('./index.html');
-        return caches.match(e.request).then(r => r || Response.error());
+        // T11 #১৫: Response.error() সব ব্রাউজারে নেই — সাধারণ Response দিয়ে ফলব্যাক
+        return caches.match(e.request).then(r => r || new Response('', { status: 503, statusText: 'Offline' }));
       })
   );
 });

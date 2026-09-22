@@ -144,7 +144,8 @@ function openEditEntry(id){
   document.getElementById('editDate').value = en.date;
   document.getElementById('editNote').value = en.note || '';
   const accSel = document.getElementById('editAccount');
-  accSel.querySelectorAll('option').forEach(o=> o.disabled = false);
+  // T11 #১১: placeholder (value='') নির্বাচনযোগ্য হবে না; বাকি অপশন আগের মতো সক্রিয়
+  accSel.querySelectorAll('option').forEach(o=> o.disabled = (o.value === ''));
   if(!Array.from(accSel.options).some(o=> o.value === en.account)){
     // ড্রপডাউনে না থাকা অ্যাকাউন্ট (যেমন আর্কাইভ করা) — নইলে সেভে অ্যাকাউন্ট খালি হয়ে যেত
     const o = document.createElement('option'); o.value = en.account;
@@ -213,6 +214,8 @@ document.getElementById('editSaveBtn').addEventListener('click', ()=>{
   } else {
     plan.patch.type = editType;
     plan.patch.account = document.getElementById('editAccount').value;
+    // T11 #১১: অ্যাকাউন্ট খালি (placeholder) থাকলে সেভ নয় — নইলে এন্ট্রির account '' হয়ে যেত
+    if(!plan.patch.account){ toast(L('entrySelectAccountMsg')); return; }
     plan.patch.budgetType = editType === 'expense' ? editBW : null;
     // D5: আয়ের সাথে বাঁধা অটো-সেভিংস মিলিয়ে দাও (শতাংশ = নতুন তারিখের মাসের); আয় → ব্যয় হলে সেভিংস মুছবে
     if(en.type === 'income' && linkedSavingsEntries(en.id).length){
@@ -287,8 +290,19 @@ function scheduleEntryDeletion(ids){
   if(removed.length === 0) return false;
   entries = entries.filter(en=> ids.indexOf(en.id) === -1);
   _balanceCache = null;
-  const recHistoryRemoved = detachRecurringHistoryForEntries(ids);   // T6: রিকারিং পেমেন্ট মুছলে মাসটা আবার pending
-  saveEntries(); renderAll();
+  const recHistoryRemoved = detachRecurringHistoryForEntries(ids, false);   // T6/T11: save:false — নিচে entries-এর সাথে অ্যাটমিকভাবে সেভ হবে
+  const okSave = atomicSaveKeys(['hisab_entries','hisab_recurring'], [saveEntries, saveRecurring]);
+  if(!okSave){
+    // রোলব্যাক: entries ও recurring history দুটোই আগের অবস্থায় ফিরিয়ে দাও
+    removed.sort((a,b)=> a.index - b.index).forEach(r=>{ entries.splice(r.index, 0, r.item); });
+    restoreRecurringHistory(recHistoryRemoved, false);
+    _balanceCache = null;
+    renderAll();
+    toast(L('storageSaveFailMsg'));
+    return false;
+  }
+  if(recHistoryRemoved.length){ checkRecurringReminder(); renderRecurringTplList(); }
+  renderAll();
   let settled = false;
   const finalize = ()=>{ if(settled) return; settled = true; };
   const finalizeTimer = setTimeout(finalize, 5000);
@@ -297,9 +311,37 @@ function scheduleEntryDeletion(ids){
     settled = true;
     clearTimeout(finalizeTimer);
     removed.sort((a,b)=> a.index - b.index).forEach(r=>{ entries.splice(r.index, 0, r.item); });
-    restoreRecurringHistory(recHistoryRemoved);
-    saveEntries(); renderAll();
+    restoreRecurringHistory(recHistoryRemoved, false);
+    if(!atomicSaveKeys(['hisab_entries','hisab_recurring'], [saveEntries, saveRecurring])){
+      // ধাপ ৫/আইটেম ৩: সেভ ফেল করলে মেমরি আবার আগের (মোছা) অবস্থায় ফিরিয়ে দাও, যাতে
+      // মেমরি ও localStorage সাময়িকভাবেও অমিল না থাকে (undo আসলে হয়নি এটা স্পষ্ট হয়)
+      entries = entries.filter(en=> ids.indexOf(en.id) === -1);
+      _balanceCache = null;
+      detachRecurringHistoryForEntries(ids, false); // recurring history আবার সরিয়ে নাও (undo বাতিল হয়েছে)
+      toast(L('storageSaveFailMsg'));
+    }
+    if(recHistoryRemoved.length){ checkRecurringReminder(); renderRecurringTplList(); }
+    renderAll();
   };
   showUndoToast(L('entryDeletedToast'), undo, null, finalize, ()=>clearTimeout(finalizeTimer));
   return true;
 }
+
+/* T3 (redesign) — floating add-entry button: purely UI convenience,
+   reuses the existing type-toggle click handler and just scrolls the
+   already-present entryForm card into view. No entry/save logic here. */
+(function(){
+  var fab = document.getElementById('fabAddEntry');
+  if(!fab) return;
+  fab.addEventListener('click', function(){
+    var card = document.getElementById('entryForm');
+    card = card ? card.closest('.card') : null;
+    if(card && card.scrollIntoView) card.scrollIntoView({behavior:'smooth', block:'start'});
+    var activeType = document.querySelector('.typeBtn.on');
+    if(activeType) activeType.click();
+    setTimeout(function(){
+      var amt = document.getElementById('amountInput');
+      if(amt) amt.focus();
+    }, 350);
+  });
+})();

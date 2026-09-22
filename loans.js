@@ -298,9 +298,17 @@ function deleteDue(id){
     const dueBackup = JSON.parse(JSON.stringify(due));
     entries.forEach((en, idx)=>{ if(idsToRemove.indexOf(en.id) !== -1) removed.push({ item: en, index: idx }); });
     entries = entries.filter(x=> idsToRemove.indexOf(x.id) === -1);
-    saveEntries();
     dues = dues.filter(d=>d.id!==id);
-    saveDues(); renderAll();
+    // T11: entries ও dues একসাথে অ্যাটমিকভাবে সেভ — একটা ফেল করলে দুটোই localStorage-এ আগের মানে ফেরে
+    const okSave = atomicSaveKeys(['hisab_entries','hisab_dues'], [saveEntries, saveDues]);
+    if(!okSave){
+      removed.sort((a,b)=>a.index-b.index).forEach(r=>{ entries.splice(Math.min(r.index, entries.length), 0, r.item); });
+      dues.push(dueBackup);
+      renderAll();
+      toast(L('storageSaveFailMsg'));
+      return;
+    }
+    renderAll();
     let settled = false;
     const finalize = ()=>{ settled = true; };
     const timer = setTimeout(finalize, 5000);
@@ -310,7 +318,13 @@ function deleteDue(id){
       clearTimeout(timer);
       removed.sort((a,b)=>a.index-b.index).forEach(r=>{ entries.splice(Math.min(r.index, entries.length), 0, r.item); });
       dues.push(dueBackup);
-      saveEntries(); saveDues(); renderAll();
+      if(!atomicSaveKeys(['hisab_entries','hisab_dues'], [saveEntries, saveDues])){
+        // ধাপ ৫/আইটেম ৩: সেভ ফেল করলে মেমরি আবার আগের (মোছা) অবস্থায় ফিরিয়ে দাও (localStorage-এর সাথে মিলিয়ে)
+        entries = entries.filter(x=> idsToRemove.indexOf(x.id) === -1);
+        dues = dues.filter(d=>d.id!==id);
+        toast(L('storageSaveFailMsg'));
+      }
+      renderAll();
     };
     showUndoToast(L('dueDeletedToast'), undo, null, finalize, ()=>clearTimeout(timer));
   });
@@ -477,9 +491,17 @@ function deleteLoan(id){
     const loanBackup = JSON.parse(JSON.stringify(loan));
     entries.forEach((en, idx)=>{ if(idsToRemove.indexOf(en.id) !== -1) removed.push({ item: en, index: idx }); });
     entries = entries.filter(x=> idsToRemove.indexOf(x.id) === -1);
-    saveEntries();
     loans = loans.filter(l=>l.id!==id);
-    saveLoans(); renderAll();
+    // T11: entries ও loans একসাথে অ্যাটমিকভাবে সেভ — একটা ফেল করলে দুটোই localStorage-এ আগের মানে ফেরে
+    const okSave = atomicSaveKeys(['hisab_entries','hisab_loans'], [saveEntries, saveLoans]);
+    if(!okSave){
+      removed.sort((a,b)=>a.index-b.index).forEach(r=>{ entries.splice(Math.min(r.index, entries.length), 0, r.item); });
+      loans.push(loanBackup);
+      renderAll();
+      toast(L('storageSaveFailMsg'));
+      return;
+    }
+    renderAll();
     let settled = false;
     const finalize = ()=>{ settled = true; };
     const timer = setTimeout(finalize, 5000);
@@ -489,7 +511,13 @@ function deleteLoan(id){
       clearTimeout(timer);
       removed.sort((a,b)=>a.index-b.index).forEach(r=>{ entries.splice(Math.min(r.index, entries.length), 0, r.item); });
       loans.push(loanBackup);
-      saveEntries(); saveLoans(); renderAll();
+      if(!atomicSaveKeys(['hisab_entries','hisab_loans'], [saveEntries, saveLoans])){
+        // ধাপ ৫/আইটেম ৩: সেভ ফেল করলে মেমরি আবার আগের (মোছা) অবস্থায় ফিরিয়ে দাও (localStorage-এর সাথে মিলিয়ে)
+        entries = entries.filter(x=> idsToRemove.indexOf(x.id) === -1);
+        loans = loans.filter(l=>l.id!==id);
+        toast(L('storageSaveFailMsg'));
+      }
+      renderAll();
     };
     showUndoToast(L('loanDeletedToast'), undo, null, finalize, ()=>clearTimeout(timer));
   });

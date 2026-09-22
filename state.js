@@ -102,7 +102,7 @@ function accLabel(acc){
     const base = escapeHtml(meta.i18n ? L(meta.name) : meta.name);   // T8: i18n নামও escape
     return meta.archived ? base + ' ' + L('accArchivedSuffix') : base;
   }
-  return L(accLabelMap[acc] || 'accCash');
+  return L(accLabelMap[acc] || 'accUnknown');
 }
 /* getAccountsList() = সব অ্যাকাউন্ট (আর্কাইভ করা সহ) — লুকআপ/লেবেল/ফিল্টারের জন্য।
    নতুন লেনদেনের ড্রপডাউনে getActiveAccountsList(), ড্যাশবোর্ডে getVisibleAccountsList() ব্যবহার করো। */
@@ -118,7 +118,7 @@ function accLabelText(acc){
     const base = meta.i18n ? L(meta.name) : String(meta.name);
     return meta.archived ? base + ' ' + L('accArchivedSuffix') : base;
   }
-  return L(accLabelMap[acc] || 'accCash');
+  return L(accLabelMap[acc] || 'accUnknown');
 }
 function accPlainName(a){ return a ? (a.i18n ? L(a.name) : String(a.name)) : ''; }   // প্লেইন টেক্সট (escape ছাড়া)
 function accNameText(a){ return accPlainName(a) + ((a && a.archived) ? ' ' + L('accArchivedSuffix') : ''); }
@@ -230,7 +230,7 @@ function updateSettleAmtState(amtInput, btn){
   if(!amtInput || !btn) return;
   const amt = parseAmt(amtInput.value);
   const max = Number(amtInput.max) || 0;
-  if(amt && max && amt > max + 0.01){ btn.classList.add('state-insufficient'); }
+  if(amt && max && gtMoney(amt, max)){ btn.classList.add('state-insufficient'); }
   else { btn.classList.remove('state-insufficient'); }
 }
 function attachSettleAmtGuard(amtInputId, btnId){
@@ -350,6 +350,26 @@ function safeSetJson(key, obj){
   try{ str = JSON.stringify(obj); }catch(e){ showStorageFailBanner(); return false; }
   return safeSet(key, str);
 }
+/* T11: একাধিক localStorage কী একসাথে বদলানোর দরকার হলে (যেমন এন্ট্রি ডিলিটে
+   entries+dues/loans/recurring একসাথে বদলায়) এটা ব্যবহার করো। saveFns গুলো
+   ক্রমান্বয়ে চালায়; কোনোটা false/ফেল ফেরালে সব কটা কী আগের (raw) মানে
+   ফিরিয়ে দেয় — যাতে "কিছু নতুন + কিছু পুরনো" মিশ্র অবস্থা তৈরি না হয়। */
+function atomicSaveKeys(keys, saveFns){
+  const prevRaw = {};
+  keys.forEach(k=>{ try{ prevRaw[k] = localStorage.getItem(k); }catch(e){ prevRaw[k] = null; } });
+  let ok = true;
+  saveFns.forEach(fn=>{ if(!fn()) ok = false; });
+  if(!ok){
+    keys.forEach(k=>{
+      try{
+        const v = prevRaw[k];
+        if(v === null || v === undefined) localStorage.removeItem(k);
+        else localStorage.setItem(k, v);
+      }catch(e){}
+    });
+  }
+  return ok;
+}
 
 function renderCorruptBanner(){
   const b = document.getElementById('corruptDataBanner');
@@ -455,12 +475,15 @@ function loadData(){
   }catch(err){}
   dues = readStoredJson('hisab_dues', 'array') || [];
   recurringTemplates = readStoredJson('hisab_recurring', 'array') || [];
-  recurringTemplates.forEach(t=>{
-    if(t.type === 'transfer'){ t.type='expense'; t.budgetType = t.budgetType || 'need'; }
-    delete t.account; delete t.toAccount;
-    if(!t.history || typeof t.history !== 'object') t.history = {};
-  });
-  saveRecurring();
+  {
+    let rmig = false;
+    recurringTemplates.forEach(t=>{
+      if(t.type === 'transfer'){ t.type='expense'; t.budgetType = t.budgetType || 'need'; rmig = true; }
+      if(t.account !== undefined || t.toAccount !== undefined){ delete t.account; delete t.toAccount; rmig = true; }
+      if(!t.history || typeof t.history !== 'object'){ t.history = {}; rmig = true; }
+    });
+    if(rmig) saveRecurring();
+  }
   {
     const s = readStoredJson('hisab_settings', 'object');
     settings = Object.assign({ savingsTarget:0, needPct:50, wantPct:30, advancedMode:false, pctHistory:{}, darkMode:'light' }, s || {});
