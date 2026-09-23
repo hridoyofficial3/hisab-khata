@@ -127,7 +127,7 @@ html[data-theme="dark"], html[data-theme="black"] select{
   body{
     font-family:'Kohinoor Bangla','Noto Sans Bengali','Hind Siliguri','Inter', sans-serif;
     background-color:var(--paper);
-    background-image:linear-gradient(rgba(248,250,252,.55),rgba(248,250,252,.55)), url("assets/bg-day.png");
+    background-image:linear-gradient(rgba(248,250,252,.55),rgba(248,250,252,.55)), url("bg-day.png");
     background-size:cover;
     background-position:center;
     background-attachment:fixed;
@@ -137,7 +137,7 @@ html[data-theme="dark"], html[data-theme="black"] select{
     transition:background-color .25s, color .25s;
   }
   html[data-theme="dark"] body, html[data-theme="black"] body{
-    background-image:linear-gradient(rgba(11,18,32,.55),rgba(11,18,32,.55)), url("assets/bg-night.png");
+    background-image:linear-gradient(rgba(11,18,32,.55),rgba(11,18,32,.55)), url("bg-night.png");
   }
 
   /* ---------- Wrapper : mobile-first, desktop centers ---------- */
