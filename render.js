@@ -30,6 +30,7 @@ function findPair(en){
 }
 function entryActionsHtml(en){
   if(isLoanDueEntry(en)) return '';
+  if(en.savingsReattribFrom) return '';
   if(canEditEntry(en)){ return '<button class="edit-icon" title="edit" onclick="event.stopPropagation(); openEditEntry('+Number(en.id)+')" onkeydown="event.stopPropagation()">✎</button>'; }
   return '';
 }
@@ -208,13 +209,49 @@ function updateEntryBtnState(){
   if(amount && gtMoney(amount, avail)){ btn.classList.add('state-insufficient'); }
   else { btn.classList.remove('state-insufficient'); }
 }
+function renderWithdrawFromOptions(){
+  const sel = document.getElementById('withdrawFrom');
+  if(!sel) return;
+  const cur = sel.value;
+  const src = savingsContributionByAccount();
+  const accs = getVisibleAccountsList().filter(a=> a.id !== 'savings' && (src[a.id] || 0) > 0);
+  const ph = '<option value="" selected disabled>'+L('selectPlaceholder')+'</option>';
+  sel.innerHTML = ph + accs.map(a=>{
+    const label = escapeHtml(accNameText(a)) + ' — ' + moneyFmt(src[a.id]);
+    return '<option value="'+escapeHtml(a.id)+'"'+(a.id===cur?' selected':'')+'>'+label+'</option>';
+  }).join('');
+  updateWithdrawAvailableHint();
+}
 function updateWithdrawAvailableHint(){
   const hint = document.getElementById('withdrawAvailableHint');
   if(!hint) return;
-  const to = document.getElementById('withdrawTo').value;
-  if(!to){ hint.style.display = 'none'; return; }
-  const sav = accountBalance('savings');
-  hint.textContent = tfmt('withdrawAvailableFmt', { amt: moneyFmt(sav) });
+  const fromSel = document.getElementById('withdrawFrom');
+  const from = fromSel ? fromSel.value : '';
+  if(!from){ hint.style.display = 'none'; return; }
+  const src = savingsContributionByAccount();
+  hint.textContent = tfmt('withdrawAvailableFmt', { amt: moneyFmt(src[from] || 0) });
+  hint.style.display = 'block';
+}
+function renderTransferSavingsFromOptions(){
+  const sel = document.getElementById('transferSavingsFrom');
+  if(!sel) return;
+  const cur = sel.value;
+  const src = savingsContributionByAccount();
+  const accs = getVisibleAccountsList().filter(a=> a.id !== 'savings' && (src[a.id] || 0) > 0);
+  const ph = '<option value="" selected disabled>'+L('selectPlaceholder')+'</option>';
+  sel.innerHTML = ph + accs.map(a=>{
+    const label = escapeHtml(accNameText(a)) + ' — ' + moneyFmt(src[a.id]);
+    return '<option value="'+escapeHtml(a.id)+'"'+(a.id===cur?' selected':'')+'>'+label+'</option>';
+  }).join('');
+  updateTransferSavingsHint();
+}
+function updateTransferSavingsHint(){
+  const hint = document.getElementById('transferSavingsAvailableHint');
+  if(!hint) return;
+  const from = document.getElementById('transferSavingsFrom').value;
+  if(!from){ hint.style.display = 'none'; return; }
+  const src = savingsContributionByAccount();
+  hint.textContent = tfmt('transferSavingsAvailableFmt', { amt: moneyFmt(src[from] || 0) });
   hint.style.display = 'block';
 }
 function updateSelfLoanAvailableHint(){
@@ -289,7 +326,7 @@ function renderAccountOptions(){
   };
   const ph = '<option value="" selected disabled>'+L('selectPlaceholder')+'</option>';
 
-  ['accountInput','transferFromSel','transferToSel','depositFrom','withdrawTo',
+  ['accountInput','transferFromSel','transferToSel','depositFrom','withdrawTo','transferSavingsTo',
    'loanAccount','selfLoanAccount','selfLoanRepayAccount'].forEach(id=>{
     const el = document.getElementById(id);
     if(!el) return;
@@ -662,7 +699,16 @@ function savingsContributionByAccount(){
   getAccountsList().forEach(a=>{ if(a.id !== 'savings') result[a.id] = 0; });
   const savTransfers = entries.filter(en=> en.transfer && en.account==='savings').sort((a,b)=> String(a.date||'').localeCompare(String(b.date||'')) || a.id - b.id);
   savTransfers.forEach(en=>{
-    if(en.type==='income'){
+    if(en.savingsReattribFrom){
+      const from = en.savingsReattribFrom, to = en.savingsReattribTo;
+      const amt = Math.min(en.savingsReattribAmount || 0, result[from] || 0);
+      if(result.hasOwnProperty(from)) result[from] = round2(result[from] - amt);
+      if(result.hasOwnProperty(to)) result[to] = round2((result[to] || 0) + amt);
+    } else if(en.savingsWithdrawFrom){
+      const from = en.savingsWithdrawFrom;
+      const amt = Math.min(en.amount || 0, result[from] || 0);
+      if(result.hasOwnProperty(from)) result[from] = round2(result[from] - amt);
+    } else if(en.type==='income'){
       const pair = findPair(en);
       if(pair && result.hasOwnProperty(pair.account)){ result[pair.account] += en.amount; }
     } else {
@@ -748,6 +794,8 @@ function renderSavingsTab(){
   const sav = accountBalance('savings');
   document.getElementById('totalSavingsVal').textContent = moneyFmt(sav);
   updateWithdrawAvailableHint();
+  renderTransferSavingsFromOptions();
+  renderWithdrawFromOptions();
   const target = settings.savingsTarget || 0;
   document.getElementById('targetInput').value = target ? formatAmtInput(String(target)) : '';
   document.getElementById('progressText').textContent = moneyFmt(sav) + ' ' + L('depositedSuffix');
@@ -758,12 +806,18 @@ function renderSavingsTab(){
   const savTx = entries.filter(en=> en.transfer && (en.account==='savings'));
   if(savTx.length === 0){ list.innerHTML = '<div class="empty">'+L('noTransactions')+'</div>'; return; }
   const sorted = [...savTx].sort((a,b)=> String(b.date||'').localeCompare(String(a.date||'')) || b.id - a.id);
-  list.innerHTML = sorted.map(en=>`
-    <div class="entry ${en.type==='income' ? 'income-bg' : 'expense-bg'}" onclick="openEntryDetail(${Number(en.id)})" role="button" tabindex="0">
+  list.innerHTML = sorted.map(en=>{
+    const isReattrib = !!en.savingsReattribFrom;
+    const amt = isReattrib ? (en.savingsReattribAmount || 0) : en.amount;
+    const sign = isReattrib ? '' : (en.type==='income' ? '+' : '-');
+    const bgClass = isReattrib ? '' : (en.type==='income' ? 'income-bg' : 'expense-bg');
+    return `
+    <div class="entry ${bgClass}" onclick="openEntryDetail(${Number(en.id)})" role="button" tabindex="0">
       <div class="left"><span class="tag">${escapeHtml(en.date)}${en.note?' · '+escapeHtml(en.note):''}</span></div>
-      <div class="actions"><span class="amt ${en.type}">${en.type==='income'?'+':'-'}${moneyFmt(en.amount)}</span>${entryActionsHtml(en)}</div>
+      <div class="actions"><span class="amt ${isReattrib?'':en.type}">${sign}${moneyFmt(amt)}</span>${entryActionsHtml(en)}</div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 function renderNotes(){
   const list = document.getElementById('notesList');
@@ -811,11 +865,13 @@ function getChartPeriods(anchorDate){
       const y = d.getFullYear(), m = d.getMonth();
       periods.push({ start: toISO(new Date(y,m,1)), end: toISO(new Date(y,m+1,0)), label: monthName(m), sub: (m===0 ? "'"+String(y).slice(2) : '') });
     }
-  } else {
+  } else if(periodMode === 'year'){
     for(let i=5; i>=0; i--){
       const y = anchorDate.getFullYear() - i;
       periods.push({ start: y+'-01-01', end: y+'-12-31', label: numFmt(y), sub: '' });
     }
+  } else {
+    periods.push({ start: '0001-01-01', end: '9999-12-31', label: L('periodAllChartLabel'), sub: '' });
   }
   return periods;
 }
@@ -919,6 +975,7 @@ function renderSummary(){
   const chartTitleKey = periodMode === 'day'   ? 'monthlyChartTitleDay'
                       : periodMode === 'week'  ? 'monthlyChartTitleWeek'
                       : periodMode === 'year'  ? 'monthlyChartTitleYear'
+                      : periodMode === 'all'   ? 'monthlyChartTitleAll'
                       : 'monthlyChartTitle';
   const chartTitleEl = document.getElementById('monthlyChartTitleText');
   if(chartTitleEl) chartTitleEl.textContent = L(chartTitleKey);
@@ -1023,7 +1080,8 @@ function renderSummary(){
   const titleKey = periodMode === 'day'   ? 'entryListTitleDay'
                  : periodMode === 'week'  ? 'entryListTitleWeek'
                  : periodMode === 'month' ? 'entryListTitleMonth'
-                 : 'entryListTitleYear';
+                 : periodMode === 'year'  ? 'entryListTitleYear'
+                 : 'entryListTitleAll';
   document.getElementById('entryListTitleText').textContent = L(titleKey);
 
   const monthList = document.getElementById('monthEntryList');

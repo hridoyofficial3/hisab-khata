@@ -277,7 +277,8 @@ function getPeriodRange(){
     return { start: toISO(s), end: toISO(e) };
   }
   if(periodMode === 'month'){ return { start: toISO(new Date(y, m, 1)), end: toISO(new Date(y, m+1, 0)) }; }
-  return { start: y+'-01-01', end: y+'-12-31' };
+  if(periodMode === 'year'){ return { start: y+'-01-01', end: y+'-12-31' }; }
+  return { start: '0001-01-01', end: '9999-12-31' }; /* 'all' — সব হিসাবের সময়কাল */
 }
 function setHeaderDate(){
   const d = new Date();

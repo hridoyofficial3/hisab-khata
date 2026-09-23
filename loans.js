@@ -143,25 +143,61 @@ document.getElementById('withdrawForm').addEventListener('submit', (e)=>{
   e.preventDefault();
   const amount = parseAmt(document.getElementById('withdrawAmount').value);
   if(!amount || amount<=0){ toast(L('invalidAmountMsg')); return; }
+  const from = document.getElementById('withdrawFrom').value;
+  if(!from){ openAlert(L('withdrawSelectFromMsg')); return; }
   const to = document.getElementById('withdrawTo').value;
   if(!to){ openAlert(L('withdrawSelectAccountMsg')); return; }
   const reason = document.getElementById('withdrawReason').value.trim();
   const note = reason ? (L('savingsWithdrawNote') + ' — ' + reason) : L('savingsWithdrawNote');
   const date = todayStr();
-  if(gtMoney(amount, accountBalance('savings'))){ toast(L('insufficientSavingsMsg')); return; }
-  const rows = confirmRow(L('confAmount'), moneyFmt(amount)) + confirmRow(L('confFrom'), L('accSavings')) +
+  const src = savingsContributionByAccount();
+  const avail = src[from] || 0;
+  if(gtMoney(amount, avail)){ toast(L('withdrawFromInsufficientMsg')); return; }
+  const rows = confirmRow(L('confAmount'), moneyFmt(amount)) + confirmRow(L('confFrom'), accLabel(from)) +
     confirmRow(L('confTo'), accLabel(to)) + confirmRow(L('confDate'), date) +
     (reason ? confirmRow(L('confNote'), escapeHtml(reason)) : '');
   openConfirm('confWithdrawTitle', rows, ()=>{
     const id1 = nextId(), id2 = nextId();
-    entries.push({ id:id1, pairId:id1, type:'expense', account:'savings', amount, date, note, transfer:true, budgetType:null });
+    entries.push({ id:id1, pairId:id1, type:'expense', account:'savings', amount, date, note, transfer:true, budgetType:null, savingsWithdrawFrom: from });
     entries.push({ id:id2, pairId:id1, type:'income', account:to, amount, date, note, transfer:true, budgetType:null });
     saveEntries();
     document.getElementById('withdrawAmount').value='';
     document.getElementById('withdrawReason').value='';
+    document.getElementById('withdrawFrom').value='';
     document.getElementById('withdrawTo').value='';
     renderAll();
     toast(L('withdrawDoneToast'));
+  });
+});
+document.getElementById('transferSavingsForm').addEventListener('submit', (e)=>{
+  e.preventDefault();
+  const amount = parseAmt(document.getElementById('transferSavingsAmount').value);
+  if(!amount || amount<=0){ toast(L('invalidAmountMsg')); return; }
+  const from = document.getElementById('transferSavingsFrom').value;
+  if(!from){ openAlert(L('transferSavingsSelectFromMsg')); return; }
+  const to = document.getElementById('transferSavingsTo').value;
+  if(!to){ openAlert(L('transferSavingsSelectToMsg')); return; }
+  if(from === to){ toast(L('transferSavingsSameAccountMsg')); return; }
+  const src = savingsContributionByAccount();
+  const avail = src[from] || 0;
+  if(gtMoney(amount, avail)){ toast(L('transferSavingsInsufficientMsg')); return; }
+  const reason = document.getElementById('transferSavingsReason').value.trim();
+  const note = tfmt('savingsReattribNoteFmt', { from: accLabelText(from), to: accLabelText(to) }) + (reason ? ' — ' + reason : '');
+  const date = todayStr();
+  const rows = confirmRow(L('confAmount'), moneyFmt(amount)) + confirmRow(L('confFrom'), accLabel(from)) +
+    confirmRow(L('confTo'), accLabel(to)) + confirmRow(L('confDate'), date) +
+    (reason ? confirmRow(L('confNote'), escapeHtml(reason)) : '');
+  openConfirm('confTransferSavingsTitle', rows, ()=>{
+    const id1 = nextId();
+    entries.push({ id:id1, pairId:id1, type:'expense', account:'savings', amount:0, date, note, transfer:true, budgetType:null,
+      savingsReattribFrom: from, savingsReattribTo: to, savingsReattribAmount: amount });
+    saveEntries();
+    document.getElementById('transferSavingsAmount').value='';
+    document.getElementById('transferSavingsReason').value='';
+    document.getElementById('transferSavingsFrom').value='';
+    document.getElementById('transferSavingsTo').value='';
+    renderAll();
+    toast(L('transferSavingsDoneToast'));
   });
 });
 document.getElementById('transferForm').addEventListener('submit', (e)=>{
@@ -206,6 +242,7 @@ document.querySelectorAll('.periodBtn').forEach(btn=>{
     document.getElementById('weekSelectRow').style.display  = periodMode==='week'  ? 'flex' : 'none';
     document.getElementById('monthSelectRow').style.display = periodMode==='month' ? 'flex' : 'none';
     document.getElementById('yearSelectRow').style.display  = periodMode==='year'  ? 'flex' : 'none';
+    document.getElementById('allSelectRow').style.display   = periodMode==='all'   ? 'flex' : 'none';
     renderSummary();
   });
 });
@@ -398,6 +435,16 @@ function openEntryDetail(id){
   const en = entries.find(x=>x.id===id);
   if(!en) return;
   const body = document.getElementById('entryDetailBody');
+  if(en.savingsReattribFrom){
+    const rows = confirmRow(L('confAmount'), moneyFmt(en.savingsReattribAmount || 0)) +
+      confirmRow(L('confFrom'), accLabel(en.savingsReattribFrom)) +
+      confirmRow(L('confTo'), accLabel(en.savingsReattribTo)) +
+      confirmRow(L('confDate'), escapeHtml(en.date)) + (en.note ? confirmRow(L('confNote'), escapeHtml(en.note)) : '');
+    body.innerHTML = rows;
+    entryDetailModalEl.classList.add('open');
+    lockBodyScroll();
+    return;
+  }
   const pair = en.transfer ? findPair(en) : null;
   const rows = confirmRow(L('confType'), L(en.type==='income'?'typeIncome':'typeExpense')) +
     confirmRow(L('confAmount'), moneyFmt(en.amount)) + confirmRow(L('confAccount'), accLabel(en.account)) +

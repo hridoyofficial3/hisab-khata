@@ -1,6 +1,6 @@
 {
-  "name": "হিসাব খাতা",
-  "short_name": "হিসাব খাতা",
+  "name": "Hisab Khata 1.2",
+  "short_name": "Hisab Khata 1.2",
   "description": "দৈনন্দিন আয়-ব্যয়, ঋণ ও নোটের হিসাব রাখার অ্যাপ",
   "start_url": "./index.html",
   "scope": "./",

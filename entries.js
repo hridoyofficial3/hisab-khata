@@ -19,6 +19,7 @@ document.querySelectorAll('.tab').forEach(tab=>{
       document.getElementById('weekSelectRow').style.display  = 'none';
       document.getElementById('monthSelectRow').style.display = 'none';
       document.getElementById('yearSelectRow').style.display  = 'none';
+      document.getElementById('allSelectRow').style.display   = 'none';
       renderSummary();
     }
   });
