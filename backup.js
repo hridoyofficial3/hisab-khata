@@ -232,7 +232,7 @@ const DEFAULT_ACCOUNTS = [
   { id:'cash',    name:'accCash',    icon:'💵', color:'var(--ledger-green)', isSystem:true, i18n:true },
   { id:'bank',    name:'accBank',    icon:'🏦', color:'var(--blue)',         isSystem:true, i18n:true },
   { id:'bkash',   name:'accBkash',   icon:'__bkash', color:'#E2136E',        isSystem:true, i18n:true },
-  { id:'savings', name:'accSavings', icon:'🏆', color:'var(--gold)',         isSystem:true, i18n:true }
+  { id:'savings', name:'accSavings', icon:'🐷', color:'var(--gold)',         isSystem:true, i18n:true }
 ];
 function isValidImportAccount(a){
   return a && typeof a === 'object' && typeof a.id === 'string' && a.id.trim().length > 0 && typeof a.name === 'string' && a.name.trim().length > 0;
@@ -328,7 +328,7 @@ function applyImportedBackup(parsed){
     entries = entriesRes.list; notes = notesRes.list; plans = plansRes.list;
     loans = loansRes.list; dues = duesRes.list; recurringTemplates = recurringRes.list;
 
-    const defaultSettings = { savingsTarget:0, needPct:50, wantPct:30, advancedMode:false, pctHistory:{}, darkMode:'light' };
+    const defaultSettings = { savingsTarget:0, needPct:50, wantPct:30, advancedMode:false, pctHistory:{}, darkMode:'light', dueReminderOn:true, dueReminderDays:3, dueNotifyOn:false };
     const rawSettings = (parsed.settings && typeof parsed.settings === 'object') ? parsed.settings : {};
     settings = Object.assign({}, defaultSettings, rawSettings);
     if(!isFiniteNum(settings.savingsTarget)) settings.savingsTarget = defaultSettings.savingsTarget;
@@ -337,6 +337,9 @@ function applyImportedBackup(parsed){
     if(typeof settings.advancedMode !== 'boolean') settings.advancedMode = defaultSettings.advancedMode;
     if(!settings.pctHistory || typeof settings.pctHistory !== 'object') settings.pctHistory = {};
     if(!['system','light','dark','black'].includes(settings.darkMode)) settings.darkMode = 'light';
+    if(typeof settings.dueReminderOn !== 'boolean') settings.dueReminderOn = true;
+    if(![1,3,7].includes(settings.dueReminderDays)) settings.dueReminderDays = 3;
+    if(typeof settings.dueNotifyOn !== 'boolean') settings.dueNotifyOn = false;
 
     settings.accounts = migrateAccountsArray(rawSettings.accounts, entries, loans, dues, plans, recurringTemplates);
 

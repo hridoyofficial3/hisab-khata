@@ -49,6 +49,7 @@ function applyLanguage(){
   if(typeof renderStoragePersistStatus === 'function') renderStoragePersistStatus();
   if(typeof renderCorruptBanner === 'function') renderCorruptBanner();
   if(typeof checkBackupReminder === 'function') checkBackupReminder();
+  if(typeof a11yLabelControls === 'function') a11yLabelControls();
 }
 
 function updateStickyOffsets(){
@@ -68,7 +69,8 @@ window.addEventListener('load', updateStickyOffsets);
 let toastTimer = null;
 function toast(msg, ms){
   const el = document.getElementById('toast');
-  el.textContent = msg;
+  if(el.textContent === msg){ el.textContent = ''; setTimeout(()=>{ el.textContent = msg; }, 50); }
+  else el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=> el.classList.remove('show'), ms || 2800);
@@ -186,6 +188,161 @@ document.addEventListener('keydown', (e)=>{
   }
 });
 
+/* A2 — মডাল অ্যাক্সেসিবিলিটি: role="dialog"/aria-modal (একবার, JS দিয়ে — HTML/i18n ছোঁয়া হয়নি),
+   ফোকাস ভেতরে আটকানো (Tab/Shift+Tab লুপ) ও বন্ধ হলে যেখানে ফোকাস ছিল সেখানে ফেরা। Escape আগে থেকেই
+   কাজ করে (উপরের হ্যান্ডলার)। MutationObserver দিয়ে প্রতিটা .modal-overlay-এর .open ক্লাস পর্যবেক্ষণ
+   করা হয় — বিদ্যমান কোনো openXxx()/closeXxx() ফাংশন ছোঁয়া লাগেনি, ভবিষ্যতে নতুন মডাল এলেও আপনা-আপনি
+   কাজ করবে (A1-এর কমন-হেল্পার নীতি অনুসরণ করে)। নেস্টেড মডাল (যেমন সেটিংসের ভেতর থেকে confirm) সমর্থিত:
+   ভেতরের মডাল বন্ধ হলে বাইরেরটা খোলা থাকলে ফোকাস তখনই ফেরানো হয় না। */
+function _a11yFocusableIn(container){
+  return Array.from(container.querySelectorAll(
+    'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  )).filter(el => el.offsetParent !== null);
+}
+function _a11ySetupModal(overlay){
+  const card = overlay.querySelector('.modal-card');
+  if(!card) return;
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-modal', 'true');
+  if(!card.hasAttribute('tabindex')) card.setAttribute('tabindex', '-1');
+  const titleEl = card.querySelector('.modal-header h3');
+  if(titleEl){
+    if(!titleEl.id) titleEl.id = overlay.id + 'A11yTitle';
+    card.setAttribute('aria-labelledby', titleEl.id);
+  }
+}
+function _a11yTopModalCard(){
+  const open = document.querySelectorAll('.modal-overlay.open');
+  if(open.length === 0) return null;
+  const overlay = open[open.length - 1];
+  return overlay.querySelector('.modal-card') || overlay;
+}
+let _a11yTrapHandler = null;
+function _a11yInstallTrap(){
+  if(_a11yTrapHandler) return;
+  _a11yTrapHandler = function(e){
+    if(e.key !== 'Tab') return;
+    const card = _a11yTopModalCard();
+    if(!card) return;
+    const f = _a11yFocusableIn(card);
+    if(f.length === 0){ e.preventDefault(); card.focus(); return; }
+    const first = f[0], last = f[f.length - 1];
+    if(!card.contains(document.activeElement)){ e.preventDefault(); first.focus(); return; }
+    if(e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+  };
+  document.addEventListener('keydown', _a11yTrapHandler);
+}
+function _a11yRemoveTrap(){
+  if(_a11yTrapHandler){ document.removeEventListener('keydown', _a11yTrapHandler); _a11yTrapHandler = null; }
+}
+const _a11yReturnFocusMap = new Map();
+function _a11yOnModalOpened(overlay){
+  _a11yReturnFocusMap.set(overlay, document.activeElement);
+  _a11yInstallTrap();
+  setTimeout(()=>{
+    const card = overlay.querySelector('.modal-card') || overlay;
+    if(!card.contains(document.activeElement)){
+      const f = _a11yFocusableIn(card);
+      (f[0] || card).focus();
+    }
+  }, 0);
+}
+function _a11yOnModalClosed(overlay){
+  const el = _a11yReturnFocusMap.get(overlay);
+  _a11yReturnFocusMap.delete(overlay);
+  if(document.querySelectorAll('.modal-overlay.open').length === 0) _a11yRemoveTrap();
+  if(el && document.body.contains(el) && typeof el.focus === 'function') el.focus();
+}
+document.querySelectorAll('.modal-overlay').forEach(overlay=>{
+  _a11ySetupModal(overlay);
+  let wasOpen = overlay.classList.contains('open');
+  new MutationObserver(()=>{
+    const isOpen = overlay.classList.contains('open');
+    if(isOpen && !wasOpen) _a11yOnModalOpened(overlay);
+    else if(!isOpen && wasOpen) _a11yOnModalClosed(overlay);
+    wasOpen = isOpen;
+  }).observe(overlay, { attributes: true, attributeFilter: ['class'] });
+});
+
+/* ============================================================
+   A3: accessible names — icon buttons, form fields, toast
+   কমন হেল্পার (A1/A2-এর নীতি): HTML-এর প্রতিটা এলিমেন্ট আলাদা করে বদলানো লাগে না।
+   - id/ক্লাস-ভিত্তিক i18n aria-label (ভাষা বদলালে applyLanguage থেকে আবার বসে)
+   - <label> ভাইবোন/সুইচের পাশের লেখা → aria-labelledby (লেখা বদলালে নিজে থেকে মেলে)
+   - না পেলে placeholder, তারপর মডালের টাইটেল
+   - ডাইনামিক কার্ডের ×/✎ বাটন MutationObserver দিয়ে ধরা হয় (childList; শুধু অ্যাট্রিবিউট বসায়, তাই লুপ নেই)
+   ============================================================ */
+const _A11Y_ID_KEY = {
+  gearBtn:'settingsTitle', fabAddEntry:'addEntryBtn', backupReminderCloseBtn:'a11yClose',
+  prevDay:'a11yPrevDay', nextDay:'a11yNextDay', prevWeek:'a11yPrevWeek', nextWeek:'a11yNextWeek',
+  prevMonth:'a11yPrevMonth', nextMonth:'a11yNextMonth', prevYear:'a11yPrevYear', nextYear:'a11yNextYear',
+  entryFilterAccount:'a11yFilterAccount', allEntriesFilterAccount:'a11yFilterAccount',
+  entryFilterType:'a11yFilterType', allEntriesFilterType:'a11yFilterType',
+  backupPasswordInput:'a11yPassword', backupPasswordConfirmInput:'a11yPasswordConfirm'
+};
+function _a11yText(el){ return (el && el.textContent || '').replace(/\s+/g,' ').trim(); }
+function _a11yEnsureId(el, base){ if(!el.id) el.id = base; return el.id; }
+function _a11yHasName(el){
+  if((el.getAttribute('aria-label') || '').trim()) return true;
+  const lb = el.getAttribute('aria-labelledby');
+  if(lb && lb.split(/\s+/).some(id => _a11yText(document.getElementById(id)))) return true;
+  if(el.labels && Array.from(el.labels).some(l => _a11yText(l))) return true;
+  return false;
+}
+function _a11yFindLabelEl(el){
+  // সুইচ: <span>লেখা</span><label class="switch"><input></label>
+  const sw = el.closest('label.switch');
+  if(sw){
+    const prev = sw.previousElementSibling;
+    if(prev && _a11yText(prev)) return prev;
+    return null;
+  }
+  const parent = el.parentElement;
+  if(!parent) return null;
+  // <div><label>লেখা</label><input></div> এবং <label>লেখা</label><select> (ভাইবোন)
+  for(let n = el.previousElementSibling; n; n = n.previousElementSibling){
+    if(n.tagName === 'LABEL' && _a11yText(n)) return n;
+  }
+  const own = parent.querySelector(':scope > label');
+  if(own && own !== el && !own.contains(el) && _a11yText(own)) return own;
+  return null;
+}
+function _a11yLabelOne(el){
+  const idKey = _A11Y_ID_KEY[el.id];
+  if(idKey){ el.setAttribute('aria-label', L(idKey)); return; }
+  if(el.tagName === 'BUTTON' || el.getAttribute('role') === 'button'){
+    if(el.classList.contains('modal-close')){ el.setAttribute('aria-label', L('a11yClose')); return; }
+    if(el.classList.contains('pdel') || el.classList.contains('del')){ el.setAttribute('aria-label', L('a11yDelete')); return; }
+    if(el.classList.contains('edit-icon')){ el.setAttribute('aria-label', L('a11yEdit')); el.title = L('a11yEdit'); return; }
+    return;
+  }
+  if(!/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName)) return;
+  if(el.dataset.a11yPh){ el.setAttribute('aria-label', el.placeholder || ''); return; }
+  if(_a11yHasName(el)) return;
+  const labelEl = _a11yFindLabelEl(el);
+  if(labelEl){ el.setAttribute('aria-labelledby', _a11yEnsureId(labelEl, (el.id || 'f') + 'A11yLbl')); return; }
+  if(el.type === 'checkbox'){
+    const nx = el.nextElementSibling;   // নোটের চেকবক্স: পাশের .txt-ই নাম
+    if(nx && _a11yText(nx)){ el.setAttribute('aria-labelledby', _a11yEnsureId(nx, (el.id || 'cb') + 'A11yTxt' + Math.random().toString(36).slice(2,7))); return; }
+  }
+  if(el.placeholder && el.placeholder.trim()){ el.dataset.a11yPh = '1'; el.setAttribute('aria-label', el.placeholder); return; }
+  const card = el.closest('.modal-card');
+  const lb = card && card.getAttribute('aria-labelledby');
+  if(lb) el.setAttribute('aria-labelledby', lb);
+}
+function a11yLabelControls(){
+  document.querySelectorAll('button, [role="button"], input:not([type="hidden"]):not([type="file"]), select, textarea')
+    .forEach(_a11yLabelOne);
+}
+let _a11yRaf = 0;
+function _a11yScheduleLabel(){
+  if(_a11yRaf) return;
+  _a11yRaf = requestAnimationFrame(()=>{ _a11yRaf = 0; a11yLabelControls(); });
+}
+new MutationObserver(_a11yScheduleLabel).observe(document.body, { childList: true, subtree: true });
+a11yLabelControls();
+
 const settingsModalEl = document.getElementById('settingsModal');
 function openSettings(){
   settingsModalEl.classList.add('open');
@@ -195,6 +352,7 @@ function openSettings(){
   document.getElementById('wantPctInput').value = settings.wantPct;
   updatePctHint();
   updateAdvancedModeStatus();
+  renderDueReminderSettings();
   renderBackupStatus();
   renderStoragePersistStatus();
   renderRecurringTplList();
@@ -220,6 +378,19 @@ document.querySelectorAll('.darkModeBtn').forEach(b=>{
     settings.darkMode = b.dataset.mode;
     saveSettings();
     applyDarkMode();
+  });
+});
+
+document.getElementById('dueReminderToggle').addEventListener('change', (e)=>{
+  settings.dueReminderOn = !!e.target.checked;
+  saveSettings(); renderAll();
+});
+document.getElementById('dueNotifyToggle').addEventListener('change', (e)=>{ onDueNotifyToggle(!!e.target.checked); });
+document.querySelectorAll('#dueReminderDaysSeg button').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    if(b.disabled) return;
+    settings.dueReminderDays = Number(b.dataset.days);
+    saveSettings(); renderAll();
   });
 });
 

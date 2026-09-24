@@ -1,9 +1,9 @@
-const CACHE = 'hisab-khata-v31';
+const CACHE = 'hisab-khata-v59';
 const FILES = [
   './', './index.html', './style.css', './manifest.json',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png',
   './i18n.js', './settings.js', './privacy-lock.js', './backup.js', './state.js', './recurring.js',
-  './render.js', './entries.js', './notes-plans.js', './loans.js', './init.js'
+  './render.js', './entries.js', './notes-plans.js', './loans.js', './reminders.js', './init.js'
 ];
 
 self.addEventListener('install', e => {
@@ -42,5 +42,16 @@ self.addEventListener('fetch', e => {
         // T11 #১৫: Response.error() সব ব্রাউজারে নেই — সাধারণ Response দিয়ে ফলব্যাক
         return caches.match(e.request).then(r => r || new Response('', { status: 503, statusText: 'Offline' }));
       })
+  );
+});
+
+// R5: নোটিফিকেশনে ট্যাপ → খোলা উইন্ডো ফোকাস, নইলে অ্যাপ খোলা
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (const c of list) { if ('focus' in c) return c.focus(); }
+      return self.clients.openWindow('./');
+    })
   );
 });

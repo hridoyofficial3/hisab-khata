@@ -25,6 +25,10 @@ document.querySelectorAll('.tab').forEach(tab=>{
   });
 });
 
+/* A1 — কমন কীবোর্ড হেল্পার: role="button"/role="tab" ও onclick div/h2/h4 (collapsible সেকশন,
+   entry/loan-history সারি, debt-box-row, due-rem-card ইত্যাদি) — সবগুলোতেই Enter/Space কাজ করবে
+   এই একটা ডেলিগেটেড লিসনার দিয়ে, প্রতিটাতে আলাদা keydown লিসনার লেখার দরকার নেই (ভবিষ্যতে নতুন
+   role="button" এলিমেন্ট যোগ হলেও আপনা-আপনি কাজ করবে)। */
 document.addEventListener('keydown', (e)=>{
   if(e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
   const el = e.target.closest('[role="button"], [role="tab"]');
@@ -186,6 +190,10 @@ function applyEditPlan(list, id, plan){
   const target = list.find(x=> x.id === id);
   if(target) Object.assign(target, plan.patch);
   if(plan.pairId != null){ const p = list.find(x=> x.id === plan.pairId); if(p) Object.assign(p, plan.pairPatch); }
+  if(plan.pairId != null){   // সেভিংসে জমার সাথে বাঁধা 'সংরক্ষিত মুভ' এন্ট্রি পরিমাণ/তারিখে মিলিয়ে রাখো
+    const gid = Math.min(id, plan.pairId);
+    list.forEach(x=>{ if(x.depositReattribOf === gid){ x.savingsReattribAmount = plan.patch.amount; x.date = plan.patch.date; } });
+  }
   if(plan.savings === 'remove') return list.filter(x=> x.autoSavingsOf !== id);
   if(plan.savings && typeof plan.savings.amount === 'number'){
     list.forEach(x=>{

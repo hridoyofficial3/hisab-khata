@@ -74,7 +74,7 @@ let notes = [];
 let plans = [];
 let loans = [];
 let dues = [];
-let settings = { savingsTarget: 0, needPct: 50, wantPct: 30, advancedMode: false, pctHistory: {}, accounts: [], darkMode: 'light' };
+let settings = { savingsTarget: 0, needPct: 50, wantPct: 30, advancedMode: false, pctHistory: {}, accounts: [], darkMode: 'light', dueReminderOn: true, dueReminderDays: 3, dueNotifyOn: false };
 let recurringTemplates = [];
 
 let __idCounter = 0;
@@ -487,12 +487,16 @@ function loadData(){
   }
   {
     const s = readStoredJson('hisab_settings', 'object');
-    settings = Object.assign({ savingsTarget:0, needPct:50, wantPct:30, advancedMode:false, pctHistory:{}, darkMode:'light' }, s || {});
+    settings = Object.assign({ savingsTarget:0, needPct:50, wantPct:30, advancedMode:false, pctHistory:{}, darkMode:'light', dueReminderOn:true, dueReminderDays:3, dueNotifyOn:false }, s || {});
   }
 
   if(!Array.isArray(settings.accounts) || settings.accounts.length === 0){
     settings.accounts = DEFAULT_ACCOUNTS.map(a=>Object.assign({}, a));
     saveSettings();
+  } else {
+    /* সেভিংস আইকন ফিক্স: আগের ট্রফি (🏆) আইকন ভুলবশত ব্যবহৃত হয়েছিল, এখন পিগি-ব্যাংকে migrate করা হচ্ছে */
+    const savAcc = settings.accounts.find(a=> a.id === 'savings');
+    if(savAcc && savAcc.icon === '🏆'){ savAcc.icon = '🐷'; saveSettings(); }
   }
   if(isNaN(Number(settings.needPct))) settings.needPct = 50;
   if(isNaN(Number(settings.wantPct))) settings.wantPct = 30;
@@ -502,6 +506,9 @@ function loadData(){
   settings.advancedMode = !!settings.advancedMode;
   if(!settings.pctHistory || typeof settings.pctHistory !== 'object') settings.pctHistory = {};
   if(!['system','light','dark','black'].includes(settings.darkMode)) settings.darkMode = 'light';
+  if(typeof settings.dueReminderOn !== 'boolean') settings.dueReminderOn = true;
+  if(![1,3,7].includes(settings.dueReminderDays)) settings.dueReminderDays = 3;
+  if(typeof settings.dueNotifyOn !== 'boolean') settings.dueNotifyOn = false;
 
   applyDarkMode();
   renderAll();

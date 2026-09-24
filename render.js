@@ -44,6 +44,7 @@ function isAutoSavingsEntry(en){ return !!(en && en.autoSavingsOf != null && ent
 function linkedSavingsEntries(incomeId){ return entries.filter(x=> x.autoSavingsOf === incomeId); }
 function actionGroupKey(en, linkedIncomeIds){
   if(en.autoSavingsOf != null) return 'inc:' + en.autoSavingsOf;
+  if(en.depositReattribOf != null) return 'pair:' + en.depositReattribOf;
   if(linkedIncomeIds.has(en.id)) return 'inc:' + en.id;
   if(en.transfer){ const pair = findPair(en); if(pair) return 'pair:' + Math.min(en.id, pair.id); }
   return 'e:' + en.id;
@@ -66,7 +67,11 @@ function getRecentActionGroups(limit){
 }
 function entryDeleteIds(en){
   const ids = [en.id];
-  if(en.transfer){ const pair = findPair(en); if(pair) ids.push(pair.id); }
+  if(en.transfer){
+    const pair = findPair(en); if(pair) ids.push(pair.id);
+    const gid = pair ? Math.min(en.id, pair.id) : en.id;
+    entries.forEach(x=>{ if(x.depositReattribOf === gid && ids.indexOf(x.id) === -1) ids.push(x.id); });   // "অন্য হিসাবে সংরক্ষিত" মুভও সাথে যাবে
+  }
   else if(en.type === 'income'){ linkedSavingsEntries(en.id).forEach(x=> ids.push(x.id)); }
   return ids;
 }
@@ -127,31 +132,6 @@ function accountBalance(acc){
   return _balanceCache[acc] || 0;
 }
 
-const balanceBreakdownModalEl = document.getElementById('balanceBreakdownModal');
-function openBalanceBreakdown(){
-  const accs = getVisibleAccountsList().map(a=>a.id);
-  const balances = accs.map(a=>({ acc:a, amt: accountBalance(a) }));
-  const total = round2(balances.reduce((s,b)=> s + b.amt, 0));
-  const max = Math.max(1, ...balances.map(b=>Math.abs(b.amt)));
-  const listEl = document.getElementById('balanceBreakdownList');
-  listEl.innerHTML = balances.map(b=>{
-    const pct = Math.round((Math.abs(b.amt)/max)*100);
-    const meta = getAccountMeta(b.acc);
-    const color = safeCssColor(meta && meta.color, 'var(--ink)');
-    return '<div class="catrow">'+
-      '<span class="k">'+accLabel(b.acc)+'</span>'+
-      '<span class="bar"><span style="width:'+pct+'%; background:'+color+';"></span></span>'+
-      '<span class="v" style="color:'+(b.amt<0?'var(--ledger-red)':'var(--ink)')+';">'+moneyFmt(b.amt)+'</span>'+
-    '</div>';
-  }).join('');
-  document.getElementById('balanceBreakdownTotal').textContent = moneyFmt(total);
-  document.getElementById('balanceBreakdownTotal').style.color = total < 0 ? 'var(--ledger-red)' : 'var(--ledger-green)';
-  balanceBreakdownModalEl.classList.add('open');
-  lockBodyScroll();
-}
-function closeBalanceBreakdown(){ balanceBreakdownModalEl.classList.remove('open'); unlockBodyScroll(); }
-document.getElementById('balanceBreakdownCloseBtn').addEventListener('click', closeBalanceBreakdown);
-balanceBreakdownModalEl.addEventListener('click', (e)=>{ if(e.target === balanceBreakdownModalEl) closeBalanceBreakdown(); });
 
 function updateAcctAvailableHint(){
   const hint = document.getElementById('acctAvailableHint');
@@ -208,6 +188,21 @@ function updateEntryBtnState(){
   const avail = accountBalance(account);
   if(amount && gtMoney(amount, avail)){ btn.classList.add('state-insufficient'); }
   else { btn.classList.remove('state-insufficient'); }
+}
+function updateDepositHint(){
+  const hint = document.getElementById('depositHint');
+  if(!hint) return;
+  const from = document.getElementById('depositFrom').value;
+  if(!from){ hint.style.display = 'none'; return; }
+  const to = document.getElementById('depositTo').value || from;
+  const usable = accountBalance(from);
+  const amt = parseAmt(document.getElementById('depositAmount').value) || 0;
+  let txt;
+  if(!amt){ txt = tfmt('depositUsableFmt', { amt: moneyFmt(usable) }); }
+  else if(to === from){ txt = tfmt('depositSameHintFmt', { amt: moneyFmt(usable), left: moneyFmt(Math.max(0, round2(usable - amt))), amt2: moneyFmt(amt) }); }
+  else { txt = tfmt('depositMoveHintFmt', { from: accLabelText(from), to: accLabelText(to), amt: moneyFmt(amt) }); }
+  hint.textContent = txt;
+  hint.style.display = 'block';
 }
 function renderWithdrawFromOptions(){
   const sel = document.getElementById('withdrawFrom');
@@ -345,6 +340,12 @@ function renderAccountOptions(){
     const cur = el.value || 'cash';
     el.innerHTML = nonSav.map(a=> optHtml(a, cur)).join('');
   });
+  const dTo = document.getElementById('depositTo');
+  if(dTo){
+    const cur = dTo.value;
+    dTo.innerHTML = '<option value="">'+escapeHtml(L('depositToSame'))+'</option>' + nonSav.map(a=> optHtml(a, cur)).join('');
+    dTo.value = cur;
+  }
   const bps = document.getElementById('buyPlanSavingsDest');
   if(bps){ const cur = bps.value; bps.innerHTML = nonSav.map(a=> optHtml(a, cur)).join(''); }
   const ed = document.getElementById('editAccount');
@@ -369,6 +370,7 @@ const ACC_SVG = {
   '🏦':'<path d="M3 21h18"/><path d="M5 21V10M9.5 21V10M14.5 21V10M19 21V10"/><path d="M12 3l9 5.5H3L12 3z"/>',
   '📱':'<rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M11 18h2"/>',
   '🏆':'<path d="M8 21h8M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3"/>',
+  '🐷':'<path d="M4 12c0-1 .5-2 1.5-2.8C6.2 6 9 4 13 4c3 0 4.5 1.2 5.3 2.2.3.4.8.6 1.3.6.8 0 1.4.6 1.4 1.4v1.6l-2 .7"/><path d="M4 12v4c0 1.7 1.8 2.6 3.2 3.1.5.2.8.6.8 1.1V21h7v-1.3c0-.5.3-.9.8-1.1.9-.3 1.9-.8 2.6-1.4"/><circle cx="15" cy="9" r=".6" fill="currentColor" stroke="none"/>',
   '💰':'<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
   '💳':'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
   '🏧':'<rect x="3" y="3" width="18" height="18" rx="2.5"/><rect x="7" y="7" width="10" height="5" rx="1"/><path d="M8 16.5h8"/>',
@@ -546,6 +548,7 @@ function renderAll(){
   renderPlans();
   renderPlanHistory();
   renderSummary();
+  if(typeof renderDueReminders === 'function') renderDueReminders();
   refreshNoteSuggestions();
   refreshPlanItemSuggestions();
 }
@@ -741,11 +744,12 @@ function renderLoansTab(){
   if(!list) return;
   const unsettledLoans = loans.filter(l=>!l.settled);
   if(unsettledLoans.length === 0){ list.innerHTML = '<div class="empty">'+L('loanEmptyMsg')+'</div>'; return; }
+  const remTags = (typeof getDueReminderTagMap === 'function') ? getDueReminderTagMap() : null;
   const sorted = [...unsettledLoans].sort((a,b)=> String(b.date||'').localeCompare(String(a.date||'')) || b.id-a.id);
   list.innerHTML = sorted.map(l=>{
     const typeLabel = l.type==='taken' ? L('loanTakenLabel') : l.type==='self' ? L('loanSelfLabel') : L('loanGivenLabel');
     const badgeClass = l.type==='taken' ? 'need' : l.type==='self' ? 'self' : 'want';
-    const dueRow = l.dueDate ? '<div>'+L('loanDueDatePrefix')+'<b>'+escapeHtml(l.dueDate)+'</b></div>' : '';
+    const dueRow = l.dueDate ? '<div>'+L('loanDueDatePrefix')+'<b>'+escapeHtml(l.dueDate)+'</b>'+(remTags ? dueReminderTagHtml(remTags, 'loan', l.id) : '')+'</div>' : '';
     const noteRow = l.note ? '<div>'+L('planNoteFmt')+escapeHtml(l.note)+'</div>' : '';
     const isPayable = (l.type==='taken' || l.type==='self');
     const settleBtnLabel = isPayable ? L('payBtnLabel') : L('collectBtnLabel');
@@ -771,6 +775,7 @@ function renderDuesTab(){
   if(!list) return;
   const unsettledDues = dues.filter(d=>!d.settled);
   if(unsettledDues.length === 0){ list.innerHTML = '<div class="empty">'+L('dueEmptyMsg')+'</div>'; return; }
+  const remTags = (typeof getDueReminderTagMap === 'function') ? getDueReminderTagMap() : null;
   const sorted = [...unsettledDues].sort((a,b)=> String(b.date||'').localeCompare(String(a.date||'')) || b.id-a.id);
   list.innerHTML = sorted.map(d=>{
     const typeLabel = d.type==='receivable' ? L('dueReceivableLabel') : L('duePayableLabel');
@@ -778,7 +783,7 @@ function renderDuesTab(){
     const isPayable = d.type==='payable';
     const itemStateClass = d.settled ? 'item-settled' : (isPayable ? 'item-due' : '');
     const reasonRow = d.reason ? '<div>'+L('dueReasonLabel')+': '+escapeHtml(d.reason)+'</div>' : '';
-    const dueDateRow = d.dueDate ? '<div>'+L('loanDueDatePrefix')+'<b>'+escapeHtml(d.dueDate)+'</b></div>' : '';
+    const dueDateRow = d.dueDate ? '<div>'+L('loanDueDatePrefix')+'<b>'+escapeHtml(d.dueDate)+'</b>'+(remTags ? dueReminderTagHtml(remTags, 'due', d.id) : '')+'</div>' : '';
     const partialRow = (!d.settled && d.paidAmount > 0) ? '<div style="color:var(--gold); font-weight:600; margin-top:4px;">'+L('paidSoFarLabel')+': '+moneyFmt(d.paidAmount)+' · '+L('remainingDueLabel')+': '+moneyFmt(d.amount)+'</div>' : '';
     const settleBtnLabel = isPayable ? L('payBtnLabel') : L('collectBtnLabel');
     const settleBtn = !d.settled ? '<button class="btn outline" style="padding:6px 10px; font-size:12px; width:auto;" onclick="openSettleDueModal('+Number(d.id)+')">'+settleBtnLabel+'</button>' : '';
@@ -796,6 +801,7 @@ function renderSavingsTab(){
   updateWithdrawAvailableHint();
   renderTransferSavingsFromOptions();
   renderWithdrawFromOptions();
+  updateDepositHint();
   const target = settings.savingsTarget || 0;
   document.getElementById('targetInput').value = target ? formatAmtInput(String(target)) : '';
   document.getElementById('progressText').textContent = moneyFmt(sav) + ' ' + L('depositedSuffix');
@@ -890,6 +896,8 @@ function computeChartData(anchorDate){
     return { inc: round2(inc), exp: round2(exp), label: p.label, sub: p.sub };
   });
 }
+let chartSelKey = null; // T3: বেছে নেওয়া পিরিয়ডের চাবি (label+sub)
+function chartSelect(key){ chartSelKey = (chartSelKey === key) ? null : key; renderSummary(); }
 function renderPeriodChart(anchorDate){
   const wrap = document.getElementById('monthlyChartWrap');
   if(!wrap) return;
@@ -905,6 +913,10 @@ function renderPeriodChart(anchorDate){
   data.forEach((d, i)=>{
     const cx = groupW*i + groupW/2;
     const incX = cx - barW - gap/2, expX = cx + gap/2;
+    const dKey = d.sub ? (d.label + ' ' + d.sub) : d.label;
+    if(dKey === chartSelKey){
+      bars += '<rect x="'+(groupW*i+2).toFixed(1)+'" y="'+(chartTop-24)+'" width="'+(groupW-4).toFixed(1)+'" height="'+(VH-chartTop-chartBottom+24+8)+'" rx="8" fill="var(--line)" opacity="0.35"></rect>';
+    }
     const incH = d.inc>0 ? Math.max(2, (d.inc/maxVal)*chartAreaH) : 0;
     const expH = d.exp>0 ? Math.max(2, (d.exp/maxVal)*chartAreaH) : 0;
     const incY = chartTop + (chartAreaH - incH);
@@ -921,10 +933,47 @@ function renderPeriodChart(anchorDate){
     labels += '<text x="'+cx.toFixed(1)+'" y="'+(VH-14)+'" text-anchor="middle" font-size="14" fill="var(--ink)">'+escapeHtml(labelText)+'</text>';
   });
   const baselineY = chartTop + chartAreaH;
-  wrap.innerHTML = '<svg viewBox="0 0 '+VW+' '+VH+'" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">' +
+  const ariaItems = data.map(d=>{
+    const labelText = d.sub ? (d.label + ' ' + d.sub) : d.label;
+    return tfmt('chartAriaItemFmt', { label: labelText, inc: moneyFmt(d.inc), exp: moneyFmt(d.exp) });
+  }).join('; ');
+  const ariaLabel = tfmt('chartAriaSummaryFmt', { items: ariaItems });
+  const tableRows = data.map(d=>{
+    const labelText = d.sub ? (d.label + ' ' + d.sub) : d.label;
+    return '<tr><th scope="row">'+escapeHtml(labelText)+'</th><td>'+escapeHtml(moneyFmt(d.inc))+'</td><td>'+escapeHtml(moneyFmt(d.exp))+'</td></tr>';
+  }).join('');
+  if(chartSelKey !== null && !data.some(d=>(d.sub ? (d.label+' '+d.sub) : d.label) === chartSelKey)) chartSelKey = null;
+  const hitBtns = data.map((d, i)=>{
+    const key = d.sub ? (d.label + ' ' + d.sub) : d.label;
+    const net = round2(d.inc - d.exp);
+    const aria = tfmt('chartHitAriaFmt', { label: key, inc: moneyFmt(d.inc), exp: moneyFmt(d.exp), net: moneyFmt(net) });
+    return '<button type="button" class="chart-hit" data-chart-idx="'+i+'" data-chart-key="'+escapeHtml(key)+'" aria-pressed="'+(key===chartSelKey?'true':'false')+'" aria-label="'+escapeHtml(aria)+'" style="left:'+(100/data.length*i).toFixed(3)+'%;width:'+(100/data.length).toFixed(3)+'%;"></button>';
+  }).join('');
+  let detail = '';
+  const selIdx = data.findIndex(d=>(d.sub ? (d.label+' '+d.sub) : d.label) === chartSelKey);
+  if(selIdx >= 0){
+    const d = data[selIdx], net = round2(d.inc - d.exp);
+    detail = '<div class="chart-detail"><div class="cd-title">'+escapeHtml(chartSelKey)+'</div>' +
+      '<div class="cd-row"><span>'+escapeHtml(L('typeIncome'))+'</span><b style="color:var(--ledger-green);">'+escapeHtml(moneyFmt(d.inc))+'</b></div>' +
+      '<div class="cd-row"><span>'+escapeHtml(L('typeExpense'))+'</span><b style="color:var(--ledger-red);">'+escapeHtml(moneyFmt(d.exp))+'</b></div>' +
+      '<div class="cd-row"><span>'+escapeHtml(L('chartDetailNet'))+'</span><b>'+escapeHtml(moneyFmt(net))+'</b></div></div>';
+  }
+  wrap.innerHTML = '<div class="chart-stage"><svg viewBox="0 0 '+VW+' '+VH+'" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="'+escapeHtml(ariaLabel)+'">' +
     '<line x1="0" y1="'+baselineY+'" x2="'+VW+'" y2="'+baselineY+'" stroke="var(--line)" stroke-width="2"></line>' +
-    bars + labels + '</svg>';
+    bars + labels + '</svg>' + hitBtns + '</div>' +
+    '<div class="chart-detail-live" aria-live="polite">' + detail + '</div>' +
+    '<table class="sr-only"><caption>'+escapeHtml(L('chartTableCaption'))+'</caption>' +
+    '<thead><tr><th scope="col">'+escapeHtml(L('chartTablePeriodHeader'))+'</th><th scope="col">'+escapeHtml(L('typeIncome'))+'</th><th scope="col">'+escapeHtml(L('typeExpense'))+'</th></tr></thead>' +
+    '<tbody>'+tableRows+'</tbody></table>';
 }
+document.addEventListener('click', function(ev){
+  const b = ev.target.closest && ev.target.closest('#monthlyChartWrap .chart-hit');
+  if(!b) return;
+  const idx = b.getAttribute('data-chart-idx');
+  chartSelect(b.getAttribute('data-chart-key'));
+  const nb = document.querySelector('#monthlyChartWrap .chart-hit[data-chart-idx="'+idx+'"]');
+  if(nb) nb.focus();
+});
 const PIE_PALETTE = ['var(--ledger-green)','var(--blue)','var(--purple)','var(--gold)','var(--ledger-red)','#0891B2','#DB2777','#65A30D'];
 function renderCategoryPie(wrapId, legendId, catsObj, emptyMsg){
   const wrap = document.getElementById(wrapId);
@@ -991,23 +1040,14 @@ function renderSummary(){
   const exp = round2(monthOperating.filter(en=>en.type==='expense').reduce((s,e)=>s+e.amount,0));
   document.getElementById('sumIncome').textContent = moneyFmt(inc);
   document.getElementById('sumExpense').textContent = moneyFmt(exp);
-  const sumBalanceEl = document.getElementById('sumBalance');
-  const currentTotalBalance = round2(getAccountsList().reduce((s,a)=> s + accountBalance(a.id), 0));
-  sumBalanceEl.textContent = moneyFmt(currentTotalBalance);
-  sumBalanceEl.style.color = currentTotalBalance < 0 ? 'var(--ledger-red)' : '';
 
   const periodLoans = loans.filter(l => inRange(l.date));
   const periodPayable = round2(periodLoans.filter(l=> (l.type==='taken' || l.type==='self') && !l.settled).reduce((s,l)=> s+l.amount, 0));
   const periodReceivable = round2(periodLoans.filter(l=> l.type==='given' && !l.settled).reduce((s,l)=> s+l.amount, 0));
-  document.getElementById('sumPayable').textContent = moneyFmt(periodPayable);
-  document.getElementById('sumReceivable').textContent = moneyFmt(periodReceivable);
-  document.getElementById('sumSavings').textContent = moneyFmt(accountBalance('savings'));
 
   const periodDues = dues.filter(d => inRange(d.date));
   const periodDueReceivable = round2(periodDues.filter(d=> d.type==='receivable' && !d.settled).reduce((s,d)=> s+d.amount, 0));
   const periodDuePayable = round2(periodDues.filter(d=> d.type==='payable' && !d.settled).reduce((s,d)=> s+d.amount, 0));
-  document.getElementById('sumDueReceivable').textContent = moneyFmt(periodDueReceivable);
-  document.getElementById('sumDuePayable').textContent = moneyFmt(periodDuePayable);
 
   const { needPct, wantPct } = getPctForMonth(anchorDate.getFullYear(), anchorDate.getMonth());
   const needSpent = round2(monthOperating.filter(en=>en.type==='expense' && en.budgetType==='need').reduce((s,e)=>s+e.amount,0));
@@ -1025,13 +1065,6 @@ function renderSummary(){
   needFillEl.style.background = budgetBarColor(needRatioPct);
   wantFillEl.style.width = (wantTarget>0 ? Math.min(100, Math.round(wantRatioPct)) : (wantSpent>0 ? 100 : 0)) + '%';
   wantFillEl.style.background = budgetBarColor(wantRatioPct);
-
-  const accDiv = document.getElementById('accMonthBreakdown');
-  const accs = getAccountsList().filter(a=> !a.archived || monthAll.some(en=> en.account === a.id)).map(a=>a.id);
-  accDiv.innerHTML = accs.map(a=>{
-    const net = round2(monthAll.filter(en=>en.account===a).reduce((s,en)=> s + (en.type==='income'? en.amount : -en.amount), 0));
-    return '<div class="acc-mini-row"><span>'+accLabel(a)+'</span><span style="font-weight:600; color:'+(net>=0?'var(--ledger-green)':'var(--ledger-red)')+'">'+(net>=0?'+':'')+moneyFmt(net)+'</span></div>';
-  }).join('');
 
   const cats = Object.create(null);
   monthOperating.filter(en=>en.type==='expense').forEach(en=>{
@@ -1051,31 +1084,26 @@ function renderSummary(){
     const key = en.note ? en.note.trim() : L('otherCategory');
     incomeCats[key] = round2((incomeCats[key]||0) + en.amount);
   });
+  const incomeDiv = document.getElementById('incomeBreakdown');
+  const incomeKeys = Object.keys(incomeCats).sort((a,b)=>incomeCats[b]-incomeCats[a]).slice(0,8);
+  if(incomeKeys.length===0){ incomeDiv.innerHTML = '<div class="empty">'+L('noIncome')+'</div>'; }
+  else {
+    const incMax = incomeCats[incomeKeys[0]];
+    incomeDiv.innerHTML = incomeKeys.map(k=>'<div class="catrow"><span class="k">'+escapeHtml(k)+'</span><span class="bar"><span style="width:'+Math.round((incomeCats[k]/incMax)*100)+'%; background:var(--ledger-green);"></span></span><span class="v">'+moneyFmt(incomeCats[k])+'</span></div>').join('');
+  }
   renderCategoryPie('incomePieWrap', 'incomePieLegend', incomeCats, L('noIncome'));
   renderCategoryPie('expensePieWrap', 'expensePieLegend', cats, L('noExpense'));
 
   const settleEntries = monthNormal.filter(en => en.loanId || en.dueId);
   const periodCollected = round2(settleEntries.filter(en=>en.type==='income').reduce((s,e)=>s+e.amount,0));
   const periodRepaid = round2(settleEntries.filter(en=>en.type==='expense').reduce((s,e)=>s+e.amount,0));
-  const debtTotalsEl = document.getElementById('debtSettleTotals');
-  if(debtTotalsEl){
-    debtTotalsEl.innerHTML = '<div class="acc-mini-row"><span>'+L('debtCollectedLabel')+'</span><span style="font-weight:600; color:var(--ledger-green);">'+moneyFmt(periodCollected)+'</span></div>' +
-      '<div class="acc-mini-row"><span>'+L('debtRepaidLabel')+'</span><span style="font-weight:600; color:var(--ledger-red);">'+moneyFmt(periodRepaid)+'</span></div>';
-  }
-  const debtCats = Object.create(null);
-  settleEntries.forEach(en=>{
-    const key = en.note ? en.note.trim() : L('otherCategory');
-    debtCats[key] = round2((debtCats[key]||0) + en.amount);
-  });
-  const debtDiv = document.getElementById('debtSettleBreakdown');
-  if(debtDiv){
-    const debtKeys = Object.keys(debtCats).sort((a,b)=>debtCats[b]-debtCats[a]).slice(0,8);
-    if(debtKeys.length===0){ debtDiv.innerHTML = '<div class="empty">'+L('debtSettleEmptyMsg')+'</div>'; }
-    else {
-      const maxD = debtCats[debtKeys[0]];
-      debtDiv.innerHTML = debtKeys.map(k=>'<div class="catrow"><span class="k">'+escapeHtml(k)+'</span><span class="bar"><span style="width:'+Math.round((debtCats[k]/maxD)*100)+'%"></span></span><span class="v">'+moneyFmt(debtCats[k])+'</span></div>').join('');
-    }
-  }
+
+  document.getElementById('dbRowDuePayable').querySelector('.val').textContent = moneyFmt(periodDuePayable);
+  document.getElementById('dbRowDueReceivable').querySelector('.val').textContent = moneyFmt(periodDueReceivable);
+  document.getElementById('dbRowReceivable').querySelector('.val').textContent = moneyFmt(periodReceivable);
+  document.getElementById('dbRowPayable').querySelector('.val').textContent = moneyFmt(periodPayable);
+  document.getElementById('dbRowCollected').querySelector('.val').textContent = moneyFmt(periodCollected);
+  document.getElementById('dbRowRepaid').querySelector('.val').textContent = moneyFmt(periodRepaid);
 
   const titleKey = periodMode === 'day'   ? 'entryListTitleDay'
                  : periodMode === 'week'  ? 'entryListTitleWeek'
@@ -1091,6 +1119,72 @@ function renderSummary(){
     monthList.innerHTML = sorted.map(en=>'<div class="entry"><div class="left"><span class="tag"><span class="accbadge">'+accLabel(en.account)+'</span>'+((en.budgetType==='need'||en.budgetType==='want')?('<span class="bwbadge '+en.budgetType+'">'+L(en.budgetType+'Label')+'</span>'):'')+escapeHtml(en.date)+(en.note?' · '+escapeHtml(en.note):'')+'</span></div><div class="actions"><span class="amt '+en.type+'">'+(en.type==='income'?'+':'-')+moneyFmt(en.amount)+'</span>'+entryActionsHtml(en)+'</div></div>').join('');
   }
 }
+
+const debtDetailModalEl = document.getElementById('debtDetailModal');
+const DEBT_DETAIL_TITLE_KEYS = {
+  duePayable:'debtBoxDuePayableLabel', dueReceivable:'debtBoxDueReceivableLabel',
+  receivable:'totalReceivableLabel', payable:'totalPayableLabel',
+  collected:'debtCollectedLabel', repaid:'debtRepaidLabel'
+};
+/* S8 — ৬ সারির ডিটেইল তালিকা। §৫-এর সংজ্ঞা renderSummary-এর সাথে হুবহু এক (একই inRange/monthNormal/settleEntries নিয়ম) */
+function getDebtDetailRows(kind){
+  const range = getPeriodRange();
+  const inRange = (ds) => !!ds && ds >= range.start && ds <= range.end;
+  const rows = [];
+  if(kind === 'duePayable' || kind === 'dueReceivable'){
+    const dtype = kind === 'duePayable' ? 'payable' : 'receivable';
+    dues.filter(d => d.type===dtype && !d.settled && inRange(d.date)).forEach(d=>{
+      rows.push({ id:d.id, badge:'', name:d.person, note:d.reason, date:d.date, acc:'', amount:d.amount, original:d.originalAmount, paid:d.paidAmount });
+    });
+  } else if(kind === 'receivable' || kind === 'payable'){
+    loans.filter(l => (kind==='receivable' ? l.type==='given' : (l.type==='taken' || l.type==='self')) && !l.settled && inRange(l.date)).forEach(l=>{
+      rows.push({ id:l.id, badge:'', name:(l.type==='self' ? L('loanSelfPersonLabel') : l.person), note:l.note, date:l.date, acc:l.account, amount:l.amount, original:l.originalAmount, paid:l.paidAmount });
+    });
+  } else if(kind === 'collected' || kind === 'repaid'){
+    const etype = kind === 'collected' ? 'income' : 'expense';
+    entries.filter(en => !en.transfer && inRange(en.date) && (en.loanId || en.dueId) && en.type===etype).forEach(en=>{
+      let name = '', badge = '';
+      if(en.loanId){
+        const l = loans.find(x => x.id === en.loanId);
+        if(l){ name = (l.type==='self' ? L('loanSelfPersonLabel') : l.person); badge = l.type==='taken' ? L('loanTakenLabel') : l.type==='self' ? L('loanSelfLabel') : L('loanGivenLabel'); }
+      } else {
+        const d = dues.find(x => x.id === en.dueId);
+        if(d){ name = d.person; badge = d.type==='receivable' ? L('dueReceivableLabel') : L('duePayableLabel'); }
+      }
+      if(!name) name = en.note || L('otherCategory');
+      rows.push({ id:en.id, badge, name, note:'', date:en.date, acc:en.account, amount:en.amount });
+    });
+  }
+  rows.sort((a,b)=> String(b.date||'').localeCompare(String(a.date||'')) || b.id - a.id);
+  return rows;
+}
+function renderDebtDetailBody(kind){
+  const rows = getDebtDetailRows(kind);
+  if(rows.length === 0) return '<div class="empty">'+L('noEntries')+'</div>';
+  const positive = (kind==='dueReceivable' || kind==='receivable' || kind==='collected');
+  const total = round2(rows.reduce((s,r)=> s + r.amount, 0));
+  const totalHtml = '<div class="debt-detail-total"><span>'+L('debtDetailTotalLabel')+'</span><b style="color:var(--'+(positive?'ledger-green':'ledger-red')+');">'+moneyFmt(total)+'</b></div>';
+  const listHtml = rows.map(r=>{
+    const partial = (r.paid > 0)
+      ? '<div class="debt-detail-sub">'+L('debtDetailOriginalLabel')+': '+moneyFmt(r.original)+' · '+L('paidSoFarLabel')+': '+moneyFmt(r.paid)+' · '+L('remainingDueLabel')+': '+moneyFmt(r.amount)+'</div>' : '';
+    return '<div class="entry '+(positive?'income-bg':'expense-bg')+'"><div class="left"><span class="tag">'+
+      (r.acc ? '<span class="accbadge">'+accLabel(r.acc)+'</span>' : '')+
+      (r.badge ? '<span class="accbadge">'+escapeHtml(r.badge)+'</span>' : '')+
+      '<b>'+escapeHtml(r.name)+'</b> · '+escapeHtml(r.date)+(r.note ? ' · '+escapeHtml(r.note) : '')+'</span>'+partial+
+      '</div><div class="actions"><span class="amt '+(positive?'income':'expense')+'">'+moneyFmt(r.amount)+'</span></div></div>';
+  }).join('');
+  return totalHtml + listHtml;
+}
+function openDebtDetail(kind){
+  document.getElementById('debtDetailTitle').textContent = L(DEBT_DETAIL_TITLE_KEYS[kind] || '');
+  document.getElementById('debtDetailBody').innerHTML = renderDebtDetailBody(kind);
+  debtDetailModalEl.dataset.kind = kind;
+  debtDetailModalEl.classList.add('open');
+  lockBodyScroll();
+}
+function closeDebtDetail(){ debtDetailModalEl.classList.remove('open'); unlockBodyScroll(); }
+document.getElementById('debtDetailCloseBtn').addEventListener('click', closeDebtDetail);
+debtDetailModalEl.addEventListener('click', (e)=>{ if(e.target === debtDetailModalEl) closeDebtDetail(); });
 
 function refreshNoteSuggestions(){
   const counts = Object.create(null);

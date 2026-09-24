@@ -125,16 +125,29 @@ document.getElementById('depositForm').addEventListener('submit', (e)=>{
   if(!amount || amount<=0){ toast(L('invalidAmountMsg')); return; }
   const from = document.getElementById('depositFrom').value;
   if(!from){ openAlert(L('depositSelectAccountMsg')); return; }
+  const toRaw = document.getElementById('depositTo').value;
+  const keepIn = toRaw || from;          // খালি = একই হিসাবেই সংরক্ষিত
+  const moved = keepIn !== from;         // অন্য হিসাবে (যেমন নগদ → ব্যাংক) সংরক্ষিত
   const date = todayStr();
   if(gtMoney(amount, accountBalance(from))){ toast(L('insufficientBalanceMsg')); return; }
-  const rows = confirmRow(L('confAmount'), moneyFmt(amount)) + confirmRow(L('confFrom'), accLabel(from)) +
-    confirmRow(L('confTo'), L('accSavings')) + confirmRow(L('confDate'), date);
+  let rows = confirmRow(L('confAmount'), moneyFmt(amount)) + confirmRow(L('confFrom'), accLabel(from)) +
+    confirmRow(L('confTo'), L('accSavings'));
+  if(moved) rows += confirmRow(L('confKeptIn'), accLabel(keepIn));
+  rows += confirmRow(L('confDate'), date);
   openConfirm('confDepositTitle', rows, ()=>{
     const id1 = nextId(), id2 = nextId();
     entries.push({ id:id1, pairId:id1, type:'expense', account:from, amount, date, note:L('savingsDepositNote'), transfer:true, budgetType:null });
     entries.push({ id:id2, pairId:id1, type:'income', account:'savings', amount, date, note:L('savingsDepositNote'), transfer:true, budgetType:null });
+    if(moved){
+      // সংরক্ষিত অংশটা উৎস থেকে গন্তব্য হিসাবে সরাও: উৎসের মোট কমবে, গন্তব্যের মোট+সংরক্ষিত বাড়বে (ব্যবহারযোগ্য অপরিবর্তিত)
+      const id3 = nextId();
+      entries.push({ id:id3, pairId:id3, type:'expense', account:'savings', amount:0, date,
+        note: tfmt('savingsDepositMoveNoteFmt', { from: accLabelText(from), to: accLabelText(keepIn) }), transfer:true, budgetType:null,
+        savingsReattribFrom: from, savingsReattribTo: keepIn, savingsReattribAmount: amount, depositReattribOf: id1 });
+    }
     saveEntries();
     document.getElementById('depositAmount').value='';
+    document.getElementById('depositTo').value='';
     renderAll();
     toast(L('depositDoneToast'));
   });
